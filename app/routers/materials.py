@@ -158,6 +158,14 @@ def service_overview(db: Session, q: str | None, jahr: str | None) -> dict:
     if jahr and str(jahr).isdigit():
         stmt = stmt.where(Offer.year == int(jahr))
     calcs = list(db.scalars(stmt.order_by(Offer.offer_date.desc().nullslast(), Offer.offer_number.desc())))
+    # inhaltsgleiche Einsätze eines Angebots (Kopie/zweite Fassung mit gleichem Ergebnis) nur einmal zählen
+    seen, unique = set(), []
+    for c in calcs:
+        key = (c.offer_id, (c.title or "").strip().lower(), round(c.total_cost or 0, 2), c.offer_price)
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+    calcs = unique
     rates: dict[tuple, list] = defaultdict(list)
     for c in calcs:
         for l in c.lines:

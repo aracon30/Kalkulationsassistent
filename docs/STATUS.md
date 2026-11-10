@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 107 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 109 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -276,3 +276,14 @@ aber nicht gemessen.
   DGRL/PED ist eine Richtlinie und wird nicht gegen das Regelwerk gestellt.
 - **Materialauszug**: Summe passt auch, wenn sie sich auf ein Stück bzw. auf alle Stück bezieht.
 - Beschriftung statt Zahl im Preisfeld („gewählt:“) ist „keine Angabe“, kein Typfehler.
+
+## 15. Werkstoffe, Service-Übersicht, veraltete Prüfpunkte
+
+- Werkstofftabelle ergänzt: ASME-Bezeichnungen (SA-516 Gr.60/70, SA-106 Gr.B, SA-333 Gr.6, SA-105;
+  SA-240/SA-312 TP316L → 1.4404), Super-Duplex S32750 → 1.4410, Nickelbasis (Monel 400 → 2.4360,
+  C-276 → 2.4819, Alloy 625 → 2.4856, C-22 → 2.4602), P355NH → 1.0565, P275NH, P235NH, P235, S355;
+  Werkstofflisten „304 / 316“ → „1.4301 / 1.4401“. Neue Gruppe „nickelbasis“.
+- Service: inhaltsgleiche Fassungen eines Angebots einmal zählen; Datum = Dateidatum (Vorlage hat
+  keins); Wert unter „Gesamt“ < 50 % der Kalkulation wird nicht als Angebotspreis übernommen.
+- „Alle erneut importieren“ entfernt am Ende offene Prüfpunkte früherer Läufe, die nicht neu
+  entstanden sind (Dateien verschoben/umbenannt/anders eingestuft).

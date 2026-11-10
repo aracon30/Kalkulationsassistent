@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -299,8 +299,18 @@ def run_import(session: Session, reporter: Reporter | None = None, force: bool =
             kind = task_for(d.document_type, d.extension)
             if kind == "pdf" or (kind == "excel" and own_profiles):
                 plan.append((d.id, kind, d.file_path, d.document_type))
+    max_before = session.scalar(select(func.max(ReviewIssue.id))) or 0
     with Prefetcher(plan, str(get_settings().profiles_dir)) as prefetch:
         _import_groups(session, groups, profiles, force, reporter, summary, prefetch, total)
+    if force and not base_dir and not summary.cancelled:
+        # Alles wurde neu bewertet: offene Prüfpunkte aus früheren Läufen, die nicht neu entstanden sind,
+        # gehören zu Dateien, die es so nicht mehr gibt (verschoben, umbenannt, jetzt anders eingestuft).
+        stale = session.execute(delete(ReviewIssue).where(ReviewIssue.id <= max_before, ReviewIssue.status == "offen",
+                                                          ReviewIssue.code != "keine_angebotsnummer"))
+        if stale.rowcount:
+            reporter.log(None, None, None, "import", "info", f"{stale.rowcount} veraltete Prüfpunkte aus früheren Importen entfernt")
+        session.commit()
+        reporter.commit_point()
     return summary
 
 
@@ -798,6 +808,10 @@ def _store_service(session: Session, offer: Offer, doc: Document, ex: WorkbookEx
         svc.total_cost = total
     elif abs(svc.total_cost - total) > 0.5:
         _issue(session, "summe_abweichend", f"{doc.file_name}: Summe der Servicezeilen {total:,.2f} € ≠ Gesamt {svc.total_cost:,.2f} €", "warnung", offer=offer, document=doc)
+    if svc.offer_price is not None and svc.total_cost and svc.offer_price < 0.5 * svc.total_cost:
+        _issue(session, "unplausibel", f"{doc.file_name}: Wert {svc.offer_price:,.2f} unter „Gesamt“ ist kein plausibler Angebotspreis "
+               f"(Kalkulation {svc.total_cost:,.2f} €) – nicht übernommen", "info", offer=offer, document=doc)
+        svc.offer_price = None
     if svc.offer_price is None:
         _issue(session, "preis_fehlt", f"{doc.file_name}: kein Angebotspreis unter „Gesamt“ gefunden – Summe {svc.total_cost:,.2f} € verwenden?", "info", offer=offer, document=doc)
     session.flush()

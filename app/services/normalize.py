@@ -12,19 +12,33 @@ MATERIAL_SYNONYMS: dict[str, list[str]] = {
     "1.4401": ["x5crnimo17-12-2", "316", "aisi 316"],
     "1.4301": ["x5crni18-10", "304", "aisi 304", "v2a"],
     "1.4307": ["x2crni18-9", "304l", "aisi 304l"],
-    "1.4462": ["x2crninmon22-5-3", "duplex", "2205"],
+    "1.4462": ["x2crninmon22-5-3", "duplex", "2205", "s32205", "s31803", "uns s32205", "uns s31803"],
+    "1.4410": ["x2crnimon25-7-4", "super duplex", "superduplex", "2507", "s32750", "uns s32750"],
+    "1.4435": ["x2crnimo18-14-3"],
+    "1.4541": ["x6crniti18-10", "321", "aisi 321"],
     "1.4539": ["x1nicrmocu25-20-5", "904l"],
     "1.0425": ["p265gh", "h ii", "hii"],
     "1.0345": ["p235gh", "h i", "hi"],
     "1.0566": ["p355nl1"],
+    "1.0565": ["p355nh"],
+    "1.0487": ["p275nh"],
+    "P235NH": ["p235nh"],
+    "P235": ["p235"],
+    "S355": ["s355"],
+    "2.4360": ["monel 400", "monel", "alloy 400", "n04400", "uns n04400", "nicu30fe"],
+    "2.4819": ["c-276", "c276", "hastelloy c-276", "hastelloy c276", "alloy c-276", "n10276", "uns n10276"],
+    "2.4856": ["alloy 625", "inconel 625", "n06625", "uns n06625"],
+    "2.4602": ["c-22", "hastelloy c-22", "alloy c-22", "n06022"],
     "1.0038": ["s235jr", "s235jrg2", "st 37-2", "st37"],
     "1.0570": ["s355j2g3", "s355j2", "st 52-3", "st52"],
 }
 MATERIAL_GROUPS = {
     "austenit": {"1.4404", "1.4571", "1.4401", "1.4301", "1.4307", "1.4539"},
-    "duplex": {"1.4462"},
-    "kesselstahl": {"1.0425", "1.0345", "1.0566"},
-    "baustahl": {"1.0038", "1.0570"},
+    "duplex": {"1.4462", "1.4410"},
+    "kesselstahl": {"1.0425", "1.0345", "1.0566", "1.0565", "1.0487", "P235NH", "P235",
+                    "SA-516 Gr.60", "SA-516 Gr.70", "SA-106 Gr.B", "SA-333 Gr.6", "SA-105"},
+    "baustahl": {"1.0038", "1.0570", "S355"},
+    "nickelbasis": {"2.4360", "2.4819", "2.4856", "2.4602"},
 }
 _MAT_LOOKUP = {syn: num for num, syns in MATERIAL_SYNONYMS.items() for syn in syns}
 
@@ -50,9 +64,17 @@ def normalize_material(raw: str | None) -> tuple[str | None, bool]:
     text = str(raw).strip()
     if not text:
         return None, False
-    m = re.search(r"\b1[.,]\s?(\d{4})\b", text)
+    m = re.search(r"\b([12])[.,]\s?(\d{4})\b", text)
     if m:
-        return f"1.{m.group(1)}", True
+        return f"{m.group(1)}.{m.group(2)}", True
+    parts = [p for p in re.split(r"\s*/\s*|\s+(?:und|oder|or|and)\s+", text) if p.strip()]
+    if len(parts) > 1:   # "304 / 316" -> "1.4301 / 1.4401"
+        norm = [normalize_material(p) for p in parts]
+        if all(ok for _, ok in norm):
+            return " / ".join(n for n, _ in norm), True
+    asme = _asme(text)
+    if asme:
+        return asme, True
     key = re.sub(r"\s+", " ", text.lower()).strip()
     if key in _MAT_LOOKUP:
         return _MAT_LOOKUP[key], True
@@ -61,6 +83,23 @@ def normalize_material(raw: str | None) -> tuple[str | None, bool]:
         if syn.replace(" ", "") == compact:
             return num, True
     return text, False
+
+
+_ASME_SPECS = {"106", "105", "182", "240", "312", "333", "350", "516", "479", "403", "358"}
+
+
+def _asme(text: str) -> str | None:
+    """ASME/ASTM-Bezeichnungen: 'SA-516 70', 'SA-106 B', '106 Gr.b', 'SA-240 316L', 'SA-312 TP316L'."""
+    m = re.match(r"(?i)^\s*(?:s?a)?[\s-]?(\d{3})\s*[,-]?\s*(?:gr(?:ade)?\.?\s*|tp\s*|f\s*)?([0-9a-z]+)\s*$", text)
+    if not m or m.group(1) not in _ASME_SPECS:
+        return None
+    spec, grade = m.group(1), m.group(2).upper()
+    stainless = _MAT_LOOKUP.get(grade.lower())
+    if stainless and stainless.startswith("1.4"):
+        return stainless                         # SA-240 316L / SA-312 TP316L -> 1.4404
+    if spec == "105" and grade in ("", "105"):
+        return "SA-105"
+    return f"SA-{spec} Gr.{grade}"
 
 
 def material_group(material: str | None) -> str | None:

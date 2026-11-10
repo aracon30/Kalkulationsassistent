@@ -28,10 +28,10 @@
     <td class="small nowrap">{{ r.latest|de_num(2) }} · <a href="/angebote/{{ r.latest_offer.id }}">{{ r.latest_offer.offer_number }}</a></td></tr>
   {% else %}<tr><td colspan="8" class="muted">Keine Serviceeinsätze importiert (ggf. „Alle erneut importieren“).</td></tr>{% endfor %}
 </table></section>
-<section class="card"><h2>Einsätze</h2>
+<section class="card"><h2>Einsätze</h2><p class="hint">* Dateidatum (die Service-Vorlage enthält kein Datum). Inhaltsgleiche Fassungen eines Angebots werden einmal gezählt.</p>
 <div class="table-wrap"><table class="table compact">
   <tr><th>Angebot</th><th>Datum</th><th>Kunde</th><th>Leistung</th><th class="num">Personal [h]</th><th class="num">Tage</th><th class="num">Nächte</th><th class="num">km</th><th class="num">Kalkulation [€]</th><th class="num">Angebotspreis [€]</th></tr>
-  {% for s in service.calcs %}{% set c = s.calc %}<tr><td class="nowrap"><a href="/angebote/{{ c.offer.id }}">{{ c.offer.offer_number }}</a></td><td class="nowrap">{{ c.offer.offer_date|de_date }}</td>
+  {% for s in service.calcs %}{% set c = s.calc %}<tr><td class="nowrap"><a href="/angebote/{{ c.offer.id }}">{{ c.offer.offer_number }}</a></td><td class="nowrap">{% if c.offer.offer_date %}{{ c.offer.offer_date|de_date }}{% elif c.document and c.document.modified_at %}<span title="Dateidatum – die Vorlage enthält kein Datum">{{ c.document.modified_at.date()|de_date }}*</span>{% else %}–{% endif %}</td>
     <td>{{ c.offer.customer or '–' }}</td><td>{{ c.title or '–' }}{% if c.abroad %} <span class="badge info">Ausland</span>{% endif %}</td>
     <td class="num">{{ s.personal_h|de_auto('') }}</td><td class="num">{{ s.days|de_auto('') }}</td><td class="num">{{ s.nights|de_auto('') }}</td><td class="num">{{ s.km|de_auto('') }}</td>
     <td class="num">{{ c.total_cost|de_num(2) }}</td><td class="num">{{ c.offer_price|de_num(2) }}</td></tr>

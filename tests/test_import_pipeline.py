@@ -554,3 +554,22 @@ def test_material_list_in_calculation_is_no_conflict():
     from app.services.import_service import _material_conflict
     assert not _material_conflict("304 / 316", "1.4301")
     assert _material_conflict("304 / 316", "1.4571") and _material_conflict("1.4401", "1.4404")
+
+
+def test_forced_reimport_removes_stale_issues(db, offer_base):
+    _full_import(db, offer_base)
+    db.add(ReviewIssue(code="widerspruch", message="ALT – Datei gibt es nicht mehr", severity="warnung"))
+    done = ReviewIssue(code="widerspruch", message="ALT erledigt", severity="warnung", status="erledigt")
+    db.add(done)
+    db.commit()
+    run_import(db, force=True)
+    msgs = {i.message for i in db.scalars(select(ReviewIssue))}
+    assert "ALT – Datei gibt es nicht mehr" not in msgs and "ALT erledigt" in msgs
+
+
+def test_asme_and_nickel_materials_are_recognised():
+    from app.services.normalize import normalize_material
+    cases = {"SA-516 70": "SA-516 Gr.70", "106 Gr.b": "SA-106 Gr.B", "SA-240 316L": "1.4404", "S32750": "1.4410",
+             "Monel 400": "2.4360", "C-276": "2.4819", "304 / 316": "1.4301 / 1.4401", "P355NH": "1.0565"}
+    for raw, expected in cases.items():
+        assert normalize_material(raw) == (expected, True), raw
