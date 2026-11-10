@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>KI-Auswertung: {{ doc.file_name }}</h1>
+<section class="card">
+  <h2>Was wird übertragen?</h2>
+  <table class="kv">
+    <tr><th>Anbieter</th><td><strong>{{ transfer.provider }}</strong> {% if transfer.external %}<span class="badge warn">extern – Daten verlassen diesen Rechner</span>{% else %}<span class="badge ok">lokal</span>{% endif %}</td></tr>
+    <tr><th>Dokument</th><td>{{ transfer.file_name }}</td></tr>
+    <tr><th>Inhalt</th><td>Nur der lokal extrahierte Text ({{ transfer.characters }} Zeichen), keine Originaldatei</td></tr>
+    <tr><th>Angefragte Felder</th><td>{{ fields|join(', ') }}</td></tr>
+  </table>
+  <details><summary>Textvorschau (erste 500 Zeichen)</summary><pre class="log">{{ transfer.preview }}</pre></details>
+  <p class="hint">KI-Ergebnisse werden als Vorschläge mit Status „Prüfbedarf“ gespeichert und nie automatisch übernommen oder freigegeben.</p>
+  <form method="post">
+    <label><input type="checkbox" name="confirm" value="ja" required> Ich bestätige die Übertragung dieser Inhalte an den genannten Anbieter.</label>
+    <p><button class="btn primary" type="submit">Auswertung starten</button> <a class="btn" href="/angebote/{{ doc.offer_id }}">Abbrechen</a></p>
+  </form>
+</section>
+{% endblock %}

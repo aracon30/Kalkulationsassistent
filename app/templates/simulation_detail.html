@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Simulation: {{ sim.name }}</h1>
+<p class="small">Erstellt {{ sim.created_at|de_date }} · Schema {{ sim.scheme_id }}{% if not result.scheme_validated %} (nicht validiert){% endif %}</p>
+<div class="grid-2">
+<section class="card"><h2>Rechenweg</h2>
+<table class="table compact"><tr><th>Position</th><th class="num">Kostenbasis</th><th class="num">Satz</th><th class="num">Betrag [€]</th></tr>
+{% for l in result.lines %}<tr class="{{ 'sum-row' if l.subtotal }}"><td>{{ l.label }}</td><td class="num">{{ l.base|de_num(2, '') }}</td><td class="num">{{ l.rate|pct('') if l.kind == 'surcharge' else '' }}</td><td class="num">{{ l.amount|de_num(2) }}</td></tr>{% endfor %}
+</table></section>
+<section class="card"><h2>Vergleich mit Original</h2>
+<table class="kv">
+<tr><th>Selbstkosten (Simulation)</th><td class="num">{{ result.total_cost|de_num(2) }}</td></tr>
+<tr><th>Verkaufspreis (Simulation)</th><td class="num">{{ result.sales_price|de_num(2) }}</td></tr>
+<tr><th>Gewinnmarge</th><td class="num">{{ result.margin|pct }}</td></tr>
+{% if base %}
+<tr><th>Selbstkosten (Original)</th><td class="num">{{ base.total_cost|de_num(2) }}</td></tr>
+<tr><th>Angebotspreis (Original)</th><td class="num">{{ base.offer_price|de_num(2) }}</td></tr>
+{% if base.offer_price and result.sales_price %}<tr><th>Differenz</th><td class="num">{{ (result.sales_price - base.offer_price)|de_num(2) }} ({{ ((result.sales_price / base.offer_price) - 1)|pct }})</td></tr>{% endif %}
+{% endif %}
+</table></section>
+</div>
+<p><a class="btn" href="/simulation">Zurück</a></p>
+{% endblock %}

@@ -1,0 +1,42 @@
+# Generisches Profil für Fertigungszeitkalkulationen (Fallback).
+# Arbeitsgänge werden als Zeilen mit Beschriftung und Stundenwert erwartet.
+profile:
+  id: generic_fertigungszeit
+  name: Generische Fertigungszeitkalkulation
+  document_type: fertigungszeitkalkulation
+  validated: false
+  priority: 0
+
+detection:
+  filename_regex: ['(?i)fertigungszeit|fertigungsstunden|arbeitsplan']
+  sheet_name_regex: ['(?i)fertigung', '(?i)zeit', '(?i)^pos']
+  labels_any: [Zuschnitt, Heften, Schweißen, Schleifen, Montage]
+  min_score: 0
+
+positions:
+  mode: auto
+  sheet_regex: '(?i)^\s*pos(?:ition)?\.?\s*(\d+)'
+  column_header_regex: '(?i)^\s*pos(?:ition)?\.?\s*(\d+)\b'
+  skip_sheet_regex: '(?i)deckblatt|übersicht|uebersicht|stammdaten|hilfs|parameter'
+
+header_fields:
+  offer_number: {labels: [Angebotsnummer, Angebots-Nr, Angebot Nr, Angebot], type: text, match: exact}
+  customer: {labels: [Kunde, Kundenname], type: text, match: exact}
+
+item_fields:
+  position_number: {labels: [Position, Pos, Pos-Nr], type: integer, match: exact}
+  product_type: {labels: [Produkttyp, Apparatetyp, Filtertyp, Typ], type: text, match: exact}
+  drawing_number: {labels: [Zeichnungsnummer, Zeichnungs-Nr, Zeichnung], type: text}
+
+# Arbeitsgänge: Schlüssel -> Anzeigename + Beschriftungen. Werte in Stunden.
+operations:
+  zuschnitt: {name: Zuschnitt, labels: [Zuschnitt, Brennen, Sägen, Schneiden]}
+  vorbereitung: {name: Vorbereitung, labels: [Vorbereitung, Schweißnahtvorbereitung, Kanten]}
+  ruesten: {name: Rüsten, labels: [Rüsten, Rüstzeit, Ruesten]}
+  heften: {name: Heften, labels: [Heften, Zusammenbau/Heften]}
+  schweissen: {name: Schweißen, labels: [Schweißen, Schweissen, Schweißarbeiten]}
+  schleifen: {name: Schleifen, labels: [Schleifen, Schleifen/Polieren, Verschleifen]}
+  montage: {name: Montage, labels: [Montage, Endmontage]}
+  pruefung: {name: Prüfung, labels: [Prüfung, Druckprüfung, Prüfen, Qualitätsprüfung]}
+  verteilzeit: {name: Verteilzeit, labels: [Verteilzeit, Verteilzeitzuschlag]}
+  gesamt: {name: Gesamtfertigungszeit, labels: [Gesamtfertigungszeit, Fertigungszeit gesamt, Summe Fertigungszeit, Summe Stunden, Gesamtstunden, Summe, Gesamt], match: exact}

@@ -1,0 +1,15 @@
+# HETA-Kalkulationsvorlage 2025 (Angebotsnummern *.25).
+# STATUS: NICHT VALIDIERT – Originaldateien lagen bei der Entwicklung nicht vor.
+extends: generic_excel
+profile:
+  id: heta_2025
+  name: HETA Kalkulation 2025
+  document_type: angebotskalkulation
+  validated: false
+  priority: 20
+
+detection:
+  filename_regex: ['(?i)SE[-_ ]?\d{5}\.25.*kalk']
+  sheet_name_regex: ['(?i)kalk', '(?i)^pos']
+  labels_any: [Materialkosten, Selbstkosten, Angebotspreis]
+  min_score: 3

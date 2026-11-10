@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HETA Kalkulationsassistent{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-toggle" type="button" aria-label="Menü" onclick="document.body.classList.toggle('nav-open')">☰</button>
+  <a class="brand" href="/"><span class="brand-mark">HETA</span> Kalkulationsassistent</a>
+  <span class="topbar-note">lokal · 127.0.0.1 · v{{ APP_VERSION }}</span>
+</header>
+<div class="layout">
+  <nav class="sidebar">
+    <a href="/" class="{{ 'active' if nav == 'dashboard' }}">Dashboard</a>
+    <a href="/import" class="{{ 'active' if nav == 'import' }}">Import-Center</a>
+    <a href="/dokumente" class="{{ 'active' if nav == 'dokumente' }}">Dateiinventar</a>
+    <a href="/angebote" class="{{ 'active' if nav == 'angebote' }}">Angebote</a>
+    <a href="/pruefung" class="{{ 'active' if nav == 'pruefung' }}">Prüfcenter</a>
+    <div class="nav-sep">Analyse</div>
+    <a href="/aehnlichkeit" class="{{ 'active' if nav == 'aehnlichkeit' }}">Ähnlichkeitssuche</a>
+    <a href="/simulation" class="{{ 'active' if nav == 'simulation' }}">Kalkulationssimulation</a>
+    <div class="nav-sep">System</div>
+    <a href="/einstellungen" class="{{ 'active' if nav == 'einstellungen' }}">Einstellungen</a>
+  </nav>
+  <main class="content">
+    {% set qmsg = msg if msg is defined and msg else request.query_params.get('msg') %}
+    {% set qerr = err if err is defined and err else request.query_params.get('err') %}
+    {% if qmsg %}<div class="alert ok">{{ qmsg }}</div>{% endif %}
+    {% if qerr %}<div class="alert error">{{ qerr }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

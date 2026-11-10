@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block title %}Prüfcenter – HETA{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Prüfcenter</h1><a class="btn" href="/pruefung/protokoll">Prüfprotokoll</a></div>
+<form class="filters" method="get">
+  <select name="status"><option value="offen" {{ 'selected' if status == 'offen' }}>offen</option><option value="erledigt" {{ 'selected' if status == 'erledigt' }}>erledigt</option></select>
+  <select name="code"><option value="">Alle Arten</option>{% for c, n in codes %}<option value="{{ c }}" {{ 'selected' if code == c }}>{{ c }} ({{ n }})</option>{% endfor %}</select>
+  <input name="angebot" value="{{ angebot }}" placeholder="Angebotsnummer">
+  <button class="btn" type="submit">Filtern</button>
+</form>
+<p class="hint">Jede Freigabe und Korrektur wird mit Name, Zeitpunkt, altem und neuem Wert protokolliert. Originaldateien werden nie verändert.</p>
+<datalist id="fields">{% for f in editable %}<option value="{{ f }}">{{ FIELD_LABELS.get(f, f) }}</option>{% endfor %}</datalist>
+<div class="table-wrap">
+<table class="table">
+  <thead><tr><th>#</th><th>Art</th><th>Angebot / Pos.</th><th>Meldung</th><th>Quelle</th>{% if status == 'offen' %}<th>Aktion</th>{% else %}<th>Erledigt</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for i in issues %}{% set ev = i.extraction_value %}
+  <tr>
+    <td>{{ i.id }}</td>
+    <td>{{ status_badge(i.severity) }}<div class="small">{{ i.code }}</div></td>
+    <td class="nowrap">{% if i.offer %}<a href="/angebote/{{ i.offer.id }}">{{ i.offer.offer_number }}</a>{% endif %}{% if i.offer_item %} · Pos. {{ i.offer_item.position_number }}{% endif %}</td>
+    <td>{{ i.message }}</td>
+    <td class="small">{% if ev %}<strong>{{ FIELD_LABELS.get(ev.field_name, ev.field_name) }}</strong> = {{ ev.field_value if ev.field_value is not none else '–' }}<br>
+      {{ i.document.file_name if i.document else '' }}{% if ev.source_cell %} · {{ ev.source_sheet }}!{{ ev.source_cell }}{% endif %}{% if ev.source_page %} · S. {{ ev.source_page }}{% endif %}
+      {% if ev.source_formula %}<br><span class="mono">{{ ev.source_formula }}</span>{% endif %}
+      {% elif i.document %}{{ i.document.file_name }}{% endif %}</td>
+    {% if status == 'offen' %}
+    <td>
+      <form method="post" action="/pruefung/{{ i.id }}" class="review-form">
+        <input name="user_name" placeholder="Ihr Name" required class="who">
+        <div class="review-actions">
+          <button class="btn small" name="action" value="freigeben" type="submit" title="Wert/Hinweis geprüft, übernehmen">Freigeben</button>
+          <button class="btn small" name="action" value="verwerfen" type="submit" title="Hinweis nicht relevant">Verwerfen</button>
+        </div>
+        <details><summary class="small">Korrigieren…</summary>
+          <input name="field_name" list="fields" placeholder="Feld" value="{{ ev.field_name if ev else ('offer_price' if i.code == 'preis_fehlt' else '') }}">
+          <input name="new_value" placeholder="Neuer Wert (leer = keine Angabe)">
+          <input name="reason" placeholder="Begründung">
+          <button class="btn small primary" name="action" value="korrigieren" type="submit">Korrektur speichern</button>
+        </details>
+      </form>
+    </td>
+    {% else %}
+    <td class="small">{{ i.resolved_at|de_date }}<br>{{ i.resolution_note }}</td>
+    {% endif %}
+  </tr>
+  {% else %}<tr><td colspan="6" class="muted">Keine Prüfpunkte.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

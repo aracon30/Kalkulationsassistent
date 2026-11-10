@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block title %}Dateiinventar – HETA{% endblock %}
+{% block content %}
+<h1>Dateiinventar <span class="hint">{{ total }} Dateien</span></h1>
+<form class="filters" method="get">
+  <input name="q" value="{{ q }}" placeholder="Pfad oder Angebotsnummer">
+  <select name="typ"><option value="">Alle Typen</option>{% for k, v in DOC_LABELS.items() %}<option value="{{ k }}" {{ 'selected' if typ == k }}>{{ v }}</option>{% endfor %}</select>
+  <select name="status"><option value="">Alle Status</option>{% for st in ['neu','importiert','fehler','ignoriert','nicht_unterstuetzt','veraltet'] %}<option value="{{ st }}" {{ 'selected' if status == st }}>{{ st }}</option>{% endfor %}</select>
+  <label class="inline"><input type="checkbox" name="alle_versionen" value="true" {{ 'checked' if alle_versionen }}> ältere Versionen</label>
+  <button class="btn" type="submit">Filtern</button>
+</form>
+<div class="table-wrap">
+<table class="table compact">
+  <thead><tr><th>Angebot</th><th>Datei</th><th>Dokumenttyp</th><th>Erkennung</th><th>Version</th><th>Import</th><th>Geändert</th><th class="num">Größe</th></tr></thead>
+  <tbody>
+  {% for d in docs %}
+    <tr>
+      <td class="nowrap">{% if d.offer_id %}<a href="/angebote/{{ d.offer_id }}">{{ d.detected_offer_number }}</a>{% else %}{{ d.detected_offer_number or '–' }}{% endif %}</td>
+      <td><span class="mono small" title="{{ d.file_path }}">{{ d.relative_path or d.file_name }}</span></td>
+      <td>{{ DOC_LABELS.get(d.document_type, d.document_type) }}</td>
+      <td><details><summary>{{ status_badge(d.classification_status) }}</summary><div class="small">{{ d.classification_rule }}</div></details></td>
+      <td>v{{ d.version }}{% if d.revision_label %} · Rev {{ d.revision_label }}{% endif %}{% if not d.is_current %} <span class="badge muted">alt</span>{% endif %}</td>
+      <td>{{ status_badge(d.import_status) }}{% if d.import_message %}<div class="small muted">{{ d.import_message }}</div>{% endif %}</td>
+      <td class="nowrap">{{ d.modified_at|de_date }}</td>
+      <td class="num nowrap">{{ ((d.file_size or 0) / 1024)|de_num(0) }} KB</td>
+    </tr>
+  {% else %}<tr><td colspan="8" class="muted">Keine Dateien gefunden.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% if pages > 1 %}<p>Seite {{ page }} / {{ pages }}
+  {% if page > 1 %}<a href="?q={{ q }}&typ={{ typ }}&status={{ status }}&page={{ page - 1 }}">← zurück</a>{% endif %}
+  {% if page < pages %}<a href="?q={{ q }}&typ={{ typ }}&status={{ status }}&page={{ page + 1 }}">weiter →</a>{% endif %}</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen – HETA{% endblock %}
+{% block content %}
+<h1>Einstellungen</h1>
+<div class="grid-2">
+<section class="card">
+  <h2>Import</h2>
+  <form method="post" action="/einstellungen" class="form-row">
+    <label>Basisverzeichnis<input name="base_dir" value="{{ s.base_dir or '' }}" placeholder="\\SERVER\Freigabe\Angebote"></label>
+    <label>Muster für Angebotsnummern (reguläre Ausdrücke, je Zeile einer; Gruppen <code>num</code> und <code>year</code>)
+      <textarea name="offer_number_patterns" rows="3" class="mono">{{ s.offer_number_patterns|join('\n') }}</textarea></label>
+    <label>Maximale Dateigröße [MB]<input name="max_file_size_mb" type="number" min="1" max="2000" value="{{ s.max_file_size_mb }}"></label>
+    <button class="btn primary" type="submit">Speichern</button>
+  </form>
+</section>
+<section class="card">
+  <h2>System</h2>
+  <table class="kv">
+    <tr><th>Datenbank</th><td class="mono small">{{ s.database_path }}</td></tr>
+    <tr><th>Protokolle</th><td class="mono small">{{ s.logs_dir }}</td></tr>
+    <tr><th>Importprofile</th><td class="mono small">{{ s.profiles_dir }}</td></tr>
+    <tr><th>LibreOffice (optionale Neuberechnung auf Kopie)</th><td>{{ soffice or 'nicht gefunden' }}</td></tr>
+  </table>
+  <form method="post" action="/einstellungen/backup"><button class="btn" type="submit">Datenbank-Backup erstellen und herunterladen</button></form>
+  {% if backups %}<p class="small">Letzte Backups: {% for b in backups %}<span class="mono">{{ b.name }}</span>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+</section>
+</div>
+<section class="card">
+  <h2>Importprofile</h2>
+  {% if profile_error %}<div class="alert error">{{ profile_error }}</div>{% endif %}
+  <table class="table compact">
+    <tr><th>ID</th><th>Name</th><th>Dokumenttyp</th><th>Datei</th><th>Validiert</th><th class="num">Felder</th></tr>
+    {% for p in profiles.values() %}
+    <tr><td class="mono">{{ p.id }}</td><td>{{ p.profile.name }}</td><td>{{ DOC_LABELS.get(p.profile.document_type) }}</td><td class="mono small">{{ p.source_file }}</td>
+      <td>{% if p.profile.validated %}<span class="badge ok">ja</span>{% else %}<span class="badge warn">nein</span>{% endif %}</td>
+      <td class="num">{{ p.header_fields|length + p.item_fields|length + p.calculation_fields|length + p.operations|length }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="hint">Profile liegen als YAML-Dateien im Ordner <code>import_profiles/</code> und können ohne Programmänderung angepasst werden.</p>
+</section>
+<section class="card">
+  <h2>KI-Schnittstelle (optional)</h2>
+  <table class="kv">
+    <tr><th>Konfigurierter Provider</th><td>{{ s.ai_provider }}</td></tr>
+    <tr><th>Aktiver Provider</th><td>{{ provider.name }}{% if provider.name == 'none' %} – KI deaktiviert{% endif %}</td></tr>
+    <tr><th>Externe Übertragung erlaubt</th><td>{{ 'ja' if s.ai_external_enabled else 'nein' }}</td></tr>
+  </table>
+  <p class="hint">Konfiguration ausschließlich über Umgebungsvariablen bzw. <code>.env</code> (siehe <code>.env.example</code>). API-Schlüssel werden nicht angezeigt und nicht protokolliert.
+    Die Anwendung funktioniert vollständig ohne KI.</p>
+</section>
+{% endblock %}

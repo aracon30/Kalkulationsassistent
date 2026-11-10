@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block title %}Angebote – HETA{% endblock %}
+{% block content %}
+<h1>Angebotsübersicht <span class="hint">{{ offers|length }} Treffer</span></h1>
+<form class="filters" method="get">
+  <input name="q" value="{{ f.q }}" placeholder="Angebotsnummer">
+  <input name="kunde" value="{{ f.kunde }}" placeholder="Kunde">
+  <select name="jahr"><option value="">Jahr</option>{% for y in years %}<option {{ 'selected' if f.jahr == y|string }}>{{ y }}</option>{% endfor %}</select>
+  <select name="produkttyp"><option value="">Produkttyp</option>{% for t in types %}<option {{ 'selected' if f.produkttyp == t }}>{{ t }}</option>{% endfor %}</select>
+  <input name="werkstoff" value="{{ f.werkstoff }}" placeholder="Werkstoff" size="8">
+  <input name="dn" value="{{ f.dn }}" placeholder="DN" size="5">
+  <input name="druck_min" value="{{ f.druck_min }}" placeholder="PS ≥ bar" size="6">
+  <input name="druck_max" value="{{ f.druck_max }}" placeholder="PS ≤ bar" size="6">
+  <select name="status"><option value="">Status</option>{% for s in statuses %}<option {{ 'selected' if f.status == s }}>{{ s }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Suchen</button> <a href="/angebote" class="small">zurücksetzen</a>
+</form>
+<div class="table-wrap">
+<table class="table">
+  <thead><tr><th>Angebot</th><th>Jahr</th><th>Kunde</th><th>Projekt</th><th>Positionen</th><th class="num">Σ Angebotspreis [€]</th><th>Status</th><th>Prüfung</th></tr></thead>
+  <tbody>
+  {% for o in offers %}
+    {% set prices = [] %}{% for it in o.items %}{% set c = it.current_calculation %}{% if c and c.offer_price is not none %}{% set _ = prices.append(c.offer_price) %}{% endif %}{% endfor %}
+    <tr>
+      <td class="nowrap"><a href="/angebote/{{ o.id }}"><strong>{{ o.offer_number }}</strong></a></td>
+      <td>{{ o.year or '–' }}</td><td>{{ o.customer or '–' }}</td><td>{{ o.project_name or '–' }}</td>
+      <td>{% for it in o.items %}<div class="small">Pos. {{ it.position_number }}: {{ it.product_type or '?' }}{% if it.dn %} · DN {{ it.dn|de_auto }}{% endif %}{% if it.material %} · {{ it.material }}{% endif %}</div>{% endfor %}</td>
+      <td class="num">{% if prices %}{{ prices|sum|de_num(2) }}{% if prices|length < o.items|length %}<span class="hint" title="nicht alle Positionen haben einen Preis">*</span>{% endif %}{% else %}–{% endif %}</td>
+      <td>{{ o.status or '–' }}</td><td>{{ status_badge(o.validation_status) }}</td>
+    </tr>
+  {% else %}<tr><td colspan="8" class="muted">Keine Angebote gefunden.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

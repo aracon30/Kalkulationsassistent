@@ -1,0 +1,14 @@
+# HETA-Fertigungszeitvorlage (2025/2026). STATUS: NICHT VALIDIERT.
+extends: generic_fertigungszeit
+profile:
+  id: heta_fertigungszeit
+  name: HETA Fertigungszeit 2025/2026
+  document_type: fertigungszeitkalkulation
+  validated: false
+  priority: 20
+
+detection:
+  filename_regex: ['(?i)SE[-_ ]?\d{5}\.\d{2}.*fertigungszeit']
+  sheet_name_regex: ['(?i)fertigung', '(?i)^pos']
+  labels_any: [Zuschnitt, Heften, Schweißen, Schleifen, Montage, Verteilzeit]
+  min_score: 3

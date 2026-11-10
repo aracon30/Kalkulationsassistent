@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – HETA Kalkulationsassistent{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="kpis">
+  <div class="kpi"><div class="kpi-label">Importierte Angebote</div><div class="kpi-value">{{ k.offers }}</div></div>
+  <div class="kpi"><div class="kpi-label">Angebotspositionen</div><div class="kpi-value">{{ k.item_count }}</div></div>
+  <div class="kpi"><div class="kpi-label">Importerfolgsquote</div><div class="kpi-value">{{ k.success_rate|pct }}</div>
+    <div class="kpi-sub">{{ k.docs_imported }} importiert · {{ k.docs_failed }} fehlerhaft · {{ k.docs_new }} neu</div></div>
+  <div class="kpi {{ 'kpi-warn' if k.open_reviews }}"><div class="kpi-label">Offene Prüfungen</div><div class="kpi-value"><a href="/pruefung">{{ k.open_reviews }}</a></div>
+    <div class="kpi-sub">davon {{ k.open_errors }} Fehler</div></div>
+  <div class="kpi"><div class="kpi-label">Ø Angebotspreis je Position</div><div class="kpi-value">{{ k.avg_price|de_num(0) }} €</div></div>
+  <div class="kpi"><div class="kpi-label">Ø Fertigungsstunden</div><div class="kpi-value">{{ k.avg_hours|de_num(1) }} h</div></div>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Angebote nach Jahr</h2>
+    {% if k.by_year %}
+    <table class="bars">
+      {% for year, n in k.by_year %}
+      <tr><th>{{ year or 'unbekannt' }}</th><td><div class="bar" style="width: {{ (n / k.max_year * 100)|round(1) }}%"></div></td><td class="num">{{ n }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">Noch keine Angebote importiert. <a href="/import">Zum Import-Center</a></p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Positionen nach Produkttyp</h2>
+    {% if k.by_type %}
+    <table class="bars">
+      {% for t, n in k.by_type %}
+      <tr><th>{{ t or 'unbekannt' }}</th><td><div class="bar" style="width: {{ (n / k.max_type * 100)|round(1) }}%"></div></td><td class="num">{{ n }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">Keine Daten.</p>{% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Durchschnittswerte je Produkttyp <span class="hint">(aktuelle Kalkulationsversion, nur vorhandene Werte)</span></h2>
+  <table class="table">
+    <thead><tr><th>Produkttyp</th><th class="num">Positionen</th><th class="num">Ø Angebotspreis [€]</th><th class="num">Ø Fertigungsstunden [h]</th></tr></thead>
+    <tbody>
+    {% for t, price, hours, n in k.avg_by_type %}
+      <tr><td>{{ t or 'unbekannt' }}</td><td class="num">{{ n }}</td><td class="num">{{ price|de_num(2) }}</td><td class="num">{{ hours|de_num(1) }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">Keine Kalkulationen vorhanden.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% if k.last_job %}
+<p class="muted">Letzter Job: #{{ k.last_job.id }} ({{ k.last_job.job_type }}) – {{ k.last_job.status }} – {{ k.last_job.started_at|de_date }}</p>
+{% endif %}
+{% endblock %}

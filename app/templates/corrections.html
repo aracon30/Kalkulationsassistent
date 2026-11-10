@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Prüfprotokoll</h1>
+<table class="table compact">
+  <thead><tr><th>Zeit</th><th>Benutzer</th><th>Aktion</th><th>Objekt</th><th>Feld</th><th>Alt</th><th>Neu</th><th>Begründung</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr><td class="nowrap">{{ r.created_at|de_date }}</td><td>{{ r.user_name or '–' }}</td><td>{{ r.action }}</td><td>{{ r.entity }} #{{ r.entity_id }}</td>
+    <td>{{ FIELD_LABELS.get(r.field_name, r.field_name) if r.field_name else '' }}</td><td>{{ r.old_value if r.old_value is not none else '–' }}</td><td>{{ r.new_value if r.new_value is not none else '–' }}</td><td>{{ r.reason or '' }}</td></tr>
+  {% else %}<tr><td colspan="8" class="muted">Noch keine Einträge.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

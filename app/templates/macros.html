@@ -1,0 +1,20 @@
+{% macro status_badge(s) -%}
+  {%- set cls = {'verifiziert':'ok','pruefbedarf':'warn','nicht_importierbar':'err','importiert':'ok','neu':'info','fehler':'err',
+                 'ignoriert':'muted','nicht_unterstuetzt':'muted','veraltet':'muted','eindeutig':'ok','wahrscheinlich':'info',
+                 'manuelle_pruefung':'warn','laeuft':'info','abgeschlossen':'ok','abgebrochen':'warn','offen':'warn','erledigt':'ok',
+                 'warnung':'warn','info':'info'}.get(s, 'muted') -%}
+  <span class="badge {{ cls }}">{{ VAL_LABELS.get(s) or CLASS_LABELS.get(s) or s }}</span>
+{%- endmacro %}
+
+{% macro value_cell(value, key, sources, kind='auto') -%}
+  {%- set src = sources.get(key, []) -%}
+  {%- set worst = 'verifiziert' -%}
+  {%- for s in src %}{% if s.status != 'verifiziert' %}{% set worst = 'pruefbedarf' %}{% endif %}{% endfor -%}
+  <span class="val {{ 'has-src' if src else 'no-src' }} {{ 'st-' ~ (worst if src else 'none') }}" {% if src %}data-src="{{ key }}" tabindex="0" title="Quelle anzeigen"{% endif %}>
+    {%- if value is none %}<span class="null">–</span>
+    {%- elif kind == 'money' %}{{ value|de_num(2) }}
+    {%- elif kind == 'hours' %}{{ value|de_num(1) }}
+    {%- else %}{{ value|de_auto }}{% endif -%}
+  </span>
+  {%- if src|length > 1 %}<sup class="src-count" title="{{ src|length }} Quellen">{{ src|length }}</sup>{% endif -%}
+{%- endmacro %}

@@ -1,0 +1,17 @@
+# HETA-Kalkulationsvorlage 2026 (Dateinamen z. B. "SE-13705.26_Kalkulation.xlsx").
+# STATUS: NICHT VALIDIERT – die Beschriftungen basieren auf der Auftragsbeschreibung,
+# nicht auf den Originaldateien (diese lagen bei der Entwicklung nicht vor).
+# Nach Abgleich mit den Originaldateien Felder/Zellen anpassen und validated: true setzen.
+extends: generic_excel
+profile:
+  id: heta_2026
+  name: HETA Kalkulation 2026
+  document_type: angebotskalkulation
+  validated: false
+  priority: 20
+
+detection:
+  filename_regex: ['(?i)SE[-_ ]?\d{5}\.26.*kalk']
+  sheet_name_regex: ['(?i)kalk', '(?i)^pos']
+  labels_any: [Materialkosten, Selbstkosten, Angebotspreis, Fertigungsstunden]
+  min_score: 3

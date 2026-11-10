@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Kalkulationssimulation – HETA{% endblock %}
+{% block content %}
+<h1>Kalkulationssimulation</h1>
+{% if not scheme.validated %}
+<div class="alert warn">Zuschlagsschema „{{ scheme.name }}“ ist <strong>nicht</strong> gegen die HETA-Originalkalkulationen validiert. Ergebnisse sind Orientierungswerte, keine verbindliche Kalkulationsmethode.</div>
+{% endif %}
+<section class="card">
+  <form method="get" class="inline-form">
+    <label>Vorbelegen aus Position
+      <select name="position" onchange="this.form.submit()">
+        <option value="">– leere Simulation –</option>
+        {% for it in items %}<option value="{{ it.id }}" {{ 'selected' if item and item.id == it.id }}>{{ it.offer.offer_number }} · Pos. {{ it.position_number }} · {{ it.product_type or '?' }}</option>{% endfor %}
+      </select></label>
+  </form>
+  {% if item %}<p class="small">Basis: Originalkalkulation {{ calc.document.file_name if calc and calc.document else '–' }} (wird nicht verändert).
+    Original-Angebotspreis: <strong>{{ calc.offer_price|de_num(2) if calc else '–' }} €</strong></p>{% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Eingaben</h2>
+    <form id="sim-form" class="grid-form two">
+      {% set money = ['material_cost','purchased_parts_cost','documentation_cost','inspection_cost','procurement_cost','surface_treatment_cost'] %}
+      {% set labels = {'material_cost':'Materialkosten [€]','weight':'Gewicht [kg]','purchased_parts_cost':'Zukaufteile [€]','manufacturing_hours':'Fertigungsstunden [h]',
+        'manufacturing_hourly_rate':'Fertigungsstundensatz [€/h]','engineering_hours':'Konstruktionsstunden [h]','engineering_hourly_rate':'Konstruktionsstundensatz [€/h]',
+        'documentation_cost':'Dokumentation [€]','inspection_cost':'Prüfkosten [€]','procurement_cost':'Beschaffungskosten [€]','surface_treatment_cost':'Oberfläche [€]',
+        'material_overhead_rate':'MGK-Zuschlag [%]','manufacturing_overhead_rate':'FGK-Zuschlag [%]','sales_overhead_rate':'VVGK-Zuschlag [%]','risk_profit_rate':'Risiko/Gewinn [%]'} %}
+      {% for key, label in labels.items() %}
+        {% set v = prefill.get(key) %}
+        <label>{{ label }}
+          <input name="{{ key }}" data-rate="{{ '1' if key.endswith('_rate') and key not in ['manufacturing_hourly_rate','engineering_hourly_rate'] else '' }}"
+                 inputmode="decimal" value="{% if v is not none %}{% if key.endswith('_rate') and key not in ['manufacturing_hourly_rate','engineering_hourly_rate'] %}{{ (v * 100)|round(3) }}{% else %}{{ v|round(2) }}{% endif %}{% endif %}"></label>
+      {% endfor %}
+    </form>
+  </section>
+  <section class="card">
+    <h2>Ergebnis</h2>
+    <table class="table compact" id="sim-table">
+      <thead><tr><th>Position</th><th class="num">Kostenbasis</th><th class="num">Satz</th><th class="num">Betrag [€]</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="kpis small-kpis">
+      <div class="kpi"><div class="kpi-label">Selbstkosten</div><div class="kpi-value" id="r-total">–</div></div>
+      <div class="kpi"><div class="kpi-label">Gewinnzuschlag</div><div class="kpi-value" id="r-profit">–</div></div>
+      <div class="kpi"><div class="kpi-label">Verkaufspreis</div><div class="kpi-value" id="r-price">–</div></div>
+      <div class="kpi"><div class="kpi-label">Gewinnmarge (vom VK)</div><div class="kpi-value" id="r-margin">–</div></div>
+      <div class="kpi"><div class="kpi-label">Spezifischer Preis</div><div class="kpi-value" id="r-kg">–</div></div>
+    </div>
+    <p id="r-missing" class="hint"></p>
+    <form method="post" action="/simulation/speichern" class="inline-form" id="save-form">
+      <input type="hidden" name="inputs_json" id="inputs_json">
+      <input type="hidden" name="position" value="{{ item.id if item else '' }}">
+      <input name="name" placeholder="Name der Simulation" required>
+      <button class="btn primary" type="submit">Simulation speichern</button>
+    </form>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Gespeicherte Simulationen <span class="hint">(getrennt von den importierten Originalwerten)</span></h2>
+  <table class="table compact">
+    <tr><th>Name</th><th>Erstellt</th><th>Schema</th><th></th></tr>
+    {% for s in sims %}<tr><td><a href="/simulation/{{ s.id }}">{{ s.name }}</a></td><td>{{ s.created_at|de_date }}</td><td>{{ s.scheme_id }}</td>
+      <td class="num"><a href="/simulation/{{ s.id }}">anzeigen</a></td></tr>
+    {% else %}<tr><td colspan="4" class="muted">Noch keine Simulationen gespeichert.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}
+{% block scripts %}<script>HETA.initSimulation();</script>{% endblock %}

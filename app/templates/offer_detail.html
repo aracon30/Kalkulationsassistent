@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, value_cell %}
+{% block title %}{{ offer.offer_number }} – HETA{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ offer.offer_number }} <span class="hint">{{ offer.customer or 'Kunde unbekannt' }}</span></h1>
+  <div>{{ status_badge(offer.validation_status) }}</div>
+</div>
+
+<div class="split">
+  <!-- Links: Dokumente und Zeichnungsvorschau -->
+  <section class="pane pane-left card">
+    <div class="viewer-head">
+      <select id="doc-select" aria-label="Dokument auswählen">
+        {% for d in pdfs %}<option value="{{ d.id }}" data-pages="{{ d.page_count or 1 }}" {{ 'selected' if selected and d.id == selected.id }}>{{ d.file_name }} ({{ DOC_LABELS.get(d.document_type, '') }})</option>{% endfor %}
+      </select>
+    </div>
+    {% if selected %}
+    <div class="viewer-tools">
+      <button class="btn small" type="button" data-act="prev">‹</button>
+      <span>Seite <span id="pg">1</span>/<span id="pgs">{{ selected.page_count or 1 }}</span></span>
+      <button class="btn small" type="button" data-act="next">›</button>
+      <button class="btn small" type="button" data-act="zoomout">−</button>
+      <span id="zoom-label">Breite</span>
+      <button class="btn small" type="button" data-act="zoomin">+</button>
+      <button class="btn small" type="button" data-act="fit">Einpassen</button>
+      <a class="btn small" id="open-pdf" href="/dokumente/{{ selected.id }}/datei" target="_blank" rel="noopener">PDF öffnen</a>
+      {% if ai.available %}<a class="btn small" id="ai-link" href="/dokumente/{{ selected.id }}/ki">KI-Auswertung…</a>{% endif %}
+    </div>
+    <div class="viewer" id="viewer" data-doc="{{ selected.id }}">
+      <img id="viewer-img" alt="Zeichnungsvorschau" src="/dokumente/{{ selected.id }}/seite/1.png?zoom=1.5" style="width:100%">
+    </div>
+    {% else %}
+    <p class="muted">Keine PDF-Dokumente zu diesem Angebot.</p>
+    {% endif %}
+    <h3>Alle Dokumente</h3>
+    <table class="table compact">
+      {% for d in docs %}
+      <tr class="{{ '' if d.is_current else 'old' }}">
+        <td>{% if d.extension == '.pdf' %}<a href="?doc={{ d.id }}">{{ d.file_name }}</a>{% else %}<a href="/dokumente/{{ d.id }}/datei">{{ d.file_name }}</a>{% endif %}
+          {% if not d.is_current %}<span class="badge muted">v{{ d.version }} alt</span>{% endif %}</td>
+        <td class="small">{{ DOC_LABELS.get(d.document_type, '') }}{% if d.offer_item %} → Pos. {{ d.offer_item.position_number }}{% endif %}</td>
+        <td>{{ status_badge(d.import_status) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <!-- Rechts: Daten -->
+  <section class="pane pane-right">
+    <div class="card">
+      <h2>Angebotskopf</h2>
+      <table class="kv">
+        {% for f in ['customer','project_name','offer_date','country','industry','currency','revision'] %}
+        <tr><th>{{ FIELD_LABELS[f] }}</th><td>{{ value_cell(offer[f]|de_date if f == 'offer_date' and offer[f] else offer[f], 'offer:' ~ offer.id ~ ':' ~ f, sources) }}</td></tr>
+        {% endfor %}
+        <tr><th>Jahr</th><td>{{ offer.year or '–' }}</td></tr>
+        <tr><th>Angebotsstatus</th><td>
+          <form method="post" action="/angebote/{{ offer.id }}/status" class="inline-form">
+            <select name="status">{% for s in status_choices %}<option {{ 'selected' if offer.status == s }}>{{ s }}</option>{% endfor %}</select>
+            <input name="user_name" placeholder="Name" size="8" required>
+            <button class="btn small" type="submit">Setzen</button>
+          </form>
+          <span class="small muted">aktuell: {{ offer.status or 'nicht gesetzt' }}</span></td></tr>
+      </table>
+      {% for i in offer_issues %}<div class="issue {{ i.severity }}">{{ i.message }}</div>{% endfor %}
+    </div>
+
+    {% for row in items %}{% set it = row.item %}{% set c = row.calc %}
+    <div class="card position">
+      <h2>Pos. {{ it.position_number }} – {{ it.product_type or 'Produkttyp unbekannt' }} {{ status_badge(it.validation_status) }}</h2>
+      {% if row.drawings %}<p class="small">Zeichnung(en): {% for d in row.drawings %}<a href="?doc={{ d.id }}">{{ d.file_name }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      {% for i in row.issues %}<div class="issue {{ i.severity }}">{{ i.message }} <a href="/pruefung?angebot={{ offer.offer_number }}">prüfen</a></div>{% endfor %}
+
+      <h3>Technische Daten</h3>
+      <table class="kv">
+        {% for f in item_fields %}
+        <tr><th>{{ FIELD_LABELS[f] }}</th><td>{{ value_cell(it[f], 'item:' ~ it.id ~ ':' ~ f, sources) }}{% if f == 'material' and it.material_raw and it.material_raw != it.material %} <span class="small muted">(Quelle: {{ it.material_raw }})</span>{% endif %}</td></tr>
+        {% endfor %}
+      </table>
+
+      <h3>Kalkulation {% if c %}<span class="hint">{{ c.document.file_name if c.document else '' }}{% if c.revision %} · Rev {{ c.revision }}{% endif %} · Profil {{ c.profile_id }}</span>{% endif %}</h3>
+      {% if c %}
+      <table class="kv">
+        {% for f in calc_fields %}
+        {% set kind = 'hours' if f.endswith('hours') else ('auto' if f == 'calculation_date' else 'money') %}
+        <tr class="{{ 'sum-row' if f in ['total_cost','offer_price'] }}"><th>{{ FIELD_LABELS[f] }}</th><td class="num">{{ value_cell(c[f]|de_date if f == 'calculation_date' and c[f] else c[f], 'calc:' ~ c.id ~ ':' ~ f, sources, kind) }}</td></tr>
+        {% endfor %}
+        <tr><th>Spezifischer Preis</th><td class="num">{% if c.offer_price and it.weight %}{{ (c.offer_price / it.weight)|de_num(2) }} €/kg{% else %}–{% endif %}</td></tr>
+        <tr><th>Währung</th><td>{{ c.currency or offer.currency or '–' }}</td></tr>
+      </table>
+      {% if row.calcs|length > 1 %}
+      <details><summary>{{ row.calcs|length }} Kalkulationsversionen</summary>
+        <table class="table compact"><tr><th>Datei</th><th>Rev.</th><th class="num">Selbstkosten</th><th class="num">Angebotspreis</th><th></th></tr>
+        {% for k in row.calcs %}<tr><td>{{ k.document.file_name if k.document else '–' }}</td><td>{{ k.revision or '–' }}</td><td class="num">{{ k.total_cost|de_num(2) }}</td><td class="num">{{ k.offer_price|de_num(2) }}</td><td>{{ 'aktuell' if k.is_current else '' }}</td></tr>{% endfor %}
+        </table></details>
+      {% endif %}
+      <p><a class="btn small" href="/simulation?position={{ it.id }}">Simulation mit diesen Werten</a></p>
+      {% else %}<p class="muted">Keine Kalkulation importiert.</p>{% endif %}
+
+      <h3>Fertigungszeiten</h3>
+      {% if row.ops %}
+      <table class="kv">
+        {% for op in row.ops %}
+        <tr class="{{ 'sum-row' if op.operation_key == 'gesamt' }}"><th>{{ op.operation_name }}</th><td class="num">{{ value_cell(op.planned_hours, 'op:' ~ it.id ~ ':' ~ op.document_id ~ ':' ~ op.operation_key, sources, 'hours') }} h</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="muted">Keine Fertigungszeiten importiert.</p>{% endif %}
+    </div>
+    {% else %}
+    <div class="card"><p class="muted">Keine Positionen erkannt.</p></div>
+    {% endfor %}
+  </section>
+</div>
+
+<aside id="src-panel" class="src-panel" hidden>
+  <button class="close" type="button" aria-label="Schließen">×</button>
+  <h3>Quellenangabe</h3>
+  <div id="src-body"></div>
+</aside>
+<script id="sources-data" type="application/json">{{ sources|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script>HETA.initViewer(); HETA.initSources();</script>{% endblock %}

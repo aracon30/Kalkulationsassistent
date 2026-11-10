@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block content %}
+<h1>{{ 'Scan' if job.job_type == 'scan' else 'Import' }}-Protokoll #{{ job.id }}</h1>
+<p>{{ status_badge(job.status) }} · Start {{ job.started_at|de_date }} · Ende {{ job.finished_at|de_date }} {% if job.base_dir %}· <span class="mono">{{ job.base_dir }}</span>{% endif %}</p>
+<p><a class="btn" href="/import/jobs/{{ job.id }}/bericht.csv">Importbericht als CSV</a>
+   {% if only_errors %}<a class="btn" href="/import/jobs/{{ job.id }}">Alle Einträge</a>{% else %}<a class="btn" href="/import/jobs/{{ job.id }}?only_errors=true">Nur Fehler</a>{% endif %}</p>
+{% if job.error_log %}<section class="card"><h2>Fehlerprotokoll</h2><pre class="log">{{ job.error_log }}</pre></section>{% endif %}
+<table class="table compact">
+  <thead><tr><th>Zeit</th><th>Angebot</th><th>Datei</th><th>Aktion</th><th>Status</th><th>Meldung</th></tr></thead>
+  <tbody>
+  {% for e in entries %}
+    <tr><td class="nowrap">{{ e.created_at|de_date }}</td><td>{{ e.offer_number or '' }}</td><td class="mono small">{{ e.file_path or '' }}</td><td>{{ e.action }}</td><td>{{ status_badge(e.status) }}</td><td>{{ e.message or '' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Keine Einträge.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

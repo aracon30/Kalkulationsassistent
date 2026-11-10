@@ -1,0 +1,54 @@
+# Zuschlagsschema für die Kalkulationssimulation.
+#
+# WICHTIG: Dies ist ein BEISPIELSCHEMA (klassische Zuschlagskalkulation).
+# Es ist NICHT gegen die HETA-Original-Excel-Dateien validiert und darf nicht als
+# verbindliche HETA-Kalkulationsmethode verstanden werden. Sätze und Bezugsbasen
+# nach Abgleich mit den Originalkalkulationen anpassen und "validated: true" setzen.
+id: beispiel_zuschlagskalkulation
+name: Beispiel-Zuschlagskalkulation (nicht validiert)
+validated: false
+
+# Eingaben mit Standardwerten (None/leer = keine Vorgabe)
+defaults:
+  material_cost: null
+  weight: null
+  purchased_parts_cost: 0
+  manufacturing_hours: null
+  manufacturing_hourly_rate: 65
+  engineering_hours: 0
+  engineering_hourly_rate: 85
+  documentation_cost: 0
+  inspection_cost: 0
+  procurement_cost: 0
+  surface_treatment_cost: 0
+  material_overhead_rate: 0.10      # Materialgemeinkosten-Zuschlag auf Materialkosten
+  manufacturing_overhead_rate: 0.0  # Fertigungsgemeinkosten auf Fertigungslohn
+  sales_overhead_rate: 0.08         # Verwaltungs-/Vertriebsgemeinkosten auf Herstellkosten
+  risk_profit_rate: 0.12            # Risiko-/Gewinnzuschlag auf Selbstkosten
+
+# Rechenschritte in Reihenfolge. Typen:
+#   input:     Betrag = Eingabewert
+#   product:   Betrag = Eingabe a × Eingabe b
+#   surcharge: Betrag = Summe(Basis) × Satz
+#   sum:       Betrag = Summe der genannten Zeilen
+lines:
+  - {key: material_cost, label: Materialkosten, type: input, input: material_cost}
+  - {key: material_overhead, label: Materialgemeinkosten, type: surcharge, base: [material_cost], rate: material_overhead_rate}
+  - {key: purchased_parts, label: Zukaufteile, type: input, input: purchased_parts_cost}
+  - {key: manufacturing_cost, label: Fertigungslohn, type: product, a: manufacturing_hours, b: manufacturing_hourly_rate}
+  - {key: manufacturing_overhead, label: Fertigungsgemeinkosten, type: surcharge, base: [manufacturing_cost], rate: manufacturing_overhead_rate}
+  - {key: engineering_cost, label: Konstruktion, type: product, a: engineering_hours, b: engineering_hourly_rate}
+  - {key: documentation_cost, label: Dokumentation, type: input, input: documentation_cost}
+  - {key: inspection_cost, label: "Prüfkosten (extern, ZFP/TÜV)", type: input, input: inspection_cost}
+  - {key: surface_treatment_cost, label: Oberflächenbehandlung, type: input, input: surface_treatment_cost}
+  - {key: procurement_cost, label: Beschaffungskosten, type: input, input: procurement_cost}
+  - {key: production_cost, label: Herstellkosten, type: sum, of: [material_cost, material_overhead, purchased_parts, manufacturing_cost, manufacturing_overhead, engineering_cost, documentation_cost, inspection_cost, surface_treatment_cost, procurement_cost], subtotal: true}
+  - {key: sales_overhead, label: Verwaltungs-/Vertriebsgemeinkosten, type: surcharge, base: [production_cost], rate: sales_overhead_rate}
+  - {key: total_cost, label: Selbstkosten, type: sum, of: [production_cost, sales_overhead], subtotal: true}
+  - {key: risk_profit, label: Risiko-/Gewinnzuschlag, type: surcharge, base: [total_cost], rate: risk_profit_rate}
+  - {key: sales_price, label: Verkaufspreis (netto), type: sum, of: [total_cost, risk_profit], subtotal: true}
+
+result_keys:
+  total_cost: total_cost
+  profit: risk_profit
+  sales_price: sales_price

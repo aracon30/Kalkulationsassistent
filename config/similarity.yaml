@@ -1,0 +1,18 @@
+# Gewichtung der Merkmale für die Ähnlichkeitssuche (regelbasiert, nachvollziehbar).
+# Fehlende Merkmale (in Anfrage oder historischer Position) werden NICHT als 0 gewertet,
+# sondern aus der Bewertung herausgenommen; die Gewichte werden neu normiert.
+#
+# Numerische Merkmale: Ähnlichkeit = max(0, 1 - |ln(a/b)| / ln(tolerance_factor))
+#   tolerance_factor 2.0 heißt: doppelter/halber Wert -> Ähnlichkeit 0
+features:
+  product_type: {weight: 4.0, kind: category}
+  dn: {weight: 2.0, kind: numeric, tolerance_factor: 2.0}
+  design_pressure: {weight: 1.5, kind: numeric, tolerance_factor: 3.0}
+  material: {weight: 1.5, kind: material}
+  filter_area: {weight: 1.5, kind: numeric, tolerance_factor: 2.5}
+  weight: {weight: 1.0, kind: numeric, tolerance_factor: 2.5}
+  filter_elements: {weight: 1.0, kind: numeric, tolerance_factor: 2.5}
+
+# Rangwert = Ähnlichkeit × Abdeckung. Unterhalb dieser Abdeckung wird ein Treffer als "geringe Datenbasis" markiert.
+min_coverage: 0.4
+top_n: 5

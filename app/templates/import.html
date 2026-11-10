@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block title %}Import-Center – HETA{% endblock %}
+{% block content %}
+<h1>Import-Center</h1>
+<div class="grid-2">
+  <section class="card">
+    <h2>1. Verzeichnis scannen</h2>
+    <form method="post" action="/import/scan" class="form-row">
+      <label for="base_dir">Basisverzeichnis (lokal, Netzlaufwerk oder UNC-Pfad)</label>
+      <input id="base_dir" name="base_dir" type="text" required value="{{ settings.base_dir or '' }}" placeholder="\\SERVER\Freigabe\Angebote oder D:\Angebote">
+      <p class="hint">Unterordner werden rekursiv durchsucht. Dateien werden nur gelesen; bekannte, unveränderte Dateien werden nicht erneut verarbeitet.</p>
+      <button class="btn primary" type="submit" {{ 'disabled' if busy }}>Scan starten</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>2. Daten importieren</h2>
+    <form method="post" action="/import/start" class="form-row">
+      <label><input type="radio" name="mode" value="neu" checked> Nur neue/geänderte Dateien</label>
+      <label><input type="radio" name="mode" value="fehler"> Neue + bisher fehlgeschlagene (z. B. gesperrte) Dateien</label>
+      <label><input type="radio" name="mode" value="alle"> Alle erneut importieren (ersetzt abgeleitete Daten dieser Dateien)</label>
+      <button class="btn primary" type="submit" {{ 'disabled' if busy }}>Import starten</button>
+    </form>
+    <form method="post" action="/import/cancel"><button class="btn danger" type="submit" id="cancel-btn" {{ '' if busy else 'disabled' }}>Laufenden Job abbrechen</button></form>
+  </section>
+</div>
+
+<section class="card" id="job-panel">
+  <h2>Fortschritt</h2>
+  <div id="job-status" class="muted">Lade Status …</div>
+  <div class="progress"><div class="progress-bar" id="job-bar" style="width:0%"></div></div>
+  <div id="job-current" class="mono small"></div>
+</section>
+
+<section class="card">
+  <h2>Dateiinventar <a class="small" href="/dokumente">alle Dateien anzeigen →</a></h2>
+  <table class="table compact">
+    <thead><tr><th>Dokumenttyp</th><th>Importstatus</th><th class="num">Anzahl</th></tr></thead>
+    <tbody>
+    {% for typ, st, n in counts %}
+      <tr><td><a href="/dokumente?typ={{ typ }}">{{ DOC_LABELS.get(typ, typ) }}</a></td><td><a href="/dokumente?typ={{ typ }}&status={{ st }}">{{ status_badge(st) }}</a></td><td class="num">{{ n }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">Noch keine Dateien gescannt.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Letzte Jobs</h2>
+  <table class="table compact">
+    <thead><tr><th>#</th><th>Typ</th><th>Start</th><th>Ende</th><th>Status</th><th class="num">gescannt</th><th class="num">importiert</th><th class="num">übersprungen</th><th class="num">fehlerhaft</th><th></th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr><td>{{ j.id }}</td><td>{{ 'Scan' if j.job_type == 'scan' else 'Import' }}</td><td>{{ j.started_at|de_date }}</td><td>{{ j.finished_at|de_date }}</td>
+        <td>{{ status_badge(j.status) }}</td><td class="num">{{ j.files_scanned }}</td><td class="num">{{ j.files_imported }}</td><td class="num">{{ j.files_skipped }}</td>
+        <td class="num">{{ j.files_failed }}</td>
+        <td class="nowrap"><a href="/import/jobs/{{ j.id }}">Protokoll</a> · <a href="/import/jobs/{{ j.id }}/bericht.csv">CSV</a></td></tr>
+    {% else %}<tr><td colspan="10" class="muted">Noch keine Jobs.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+{% block scripts %}<script>HETA.pollJobs();</script>{% endblock %}

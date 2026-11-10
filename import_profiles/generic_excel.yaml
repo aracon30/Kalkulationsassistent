@@ -1,0 +1,83 @@
+# Generisches Profil für Angebotskalkulationen (Fallback).
+# Sucht Werte über Zellbeschriftungen ("Label rechts daneben steht der Wert").
+# Profile können ohne Änderung am Python-Code angepasst werden.
+#
+# Feldoptionen:
+#   labels:        Liste von Beschriftungen (Reihenfolge = Priorität). Vergleich ohne Groß-/Kleinschreibung,
+#                  Umlaute werden normalisiert, Einheiten in Klammern ignoriert.
+#   match:         prefix (Standard, "Materialkosten gesamt" passt zu "Materialkosten") | exact
+#   cell:          feste Zelle, z. B. "C12" oder "Kalkulation!C12" (hat Vorrang vor labels)
+#   sheet:         regulärer Ausdruck, beschränkt die Suche auf passende Tabellenblätter
+#   type:          number | integer | text | date | temperature_range
+#   direction:     right | below | right_or_below
+#   max_distance:  wie viele Zellen neben/unter der Beschriftung gesucht wird
+#   unit:          Einheit des Wertes (nur Dokumentation/Anzeige)
+profile:
+  id: generic_excel
+  name: Generische Angebotskalkulation
+  document_type: angebotskalkulation
+  validated: false        # erst nach Abgleich mit Originaldateien auf true setzen
+  priority: 0
+
+detection:
+  filename_regex: ['(?i)kalk']
+  sheet_name_regex: ['(?i)kalk', '(?i)^pos']
+  labels_any: [Materialkosten, Selbstkosten, Angebotspreis, Verkaufspreis, Fertigungskosten]
+  min_score: 0
+
+positions:
+  mode: auto              # auto | single | sheet_per_position | column_per_position
+  sheet_regex: '(?i)^\s*pos(?:ition)?\.?\s*(\d+)'
+  column_header_regex: '(?i)^\s*pos(?:ition)?\.?\s*(\d+)\b'
+  skip_sheet_regex: '(?i)deckblatt|übersicht|uebersicht|zusammenfassung|stammdaten|hilfs|parameter'
+
+header_fields:
+  offer_number: {labels: [Angebotsnummer, Angebots-Nr, Angebot Nr, Angebot-Nr, Angebotsnr, Angebot], type: text, match: exact}
+  customer: {labels: [Kunde, Kundenname, Auftraggeber, Firma], type: text, match: exact}
+  offer_date: {labels: [Angebotsdatum, Datum], type: date, match: exact}
+  country: {labels: [Land, Lieferland, Bestimmungsland], type: text, match: exact}
+  project_name: {labels: [Projekt, Projektbezeichnung, Projektname, Bauvorhaben], type: text, match: exact}
+  industry: {labels: [Branche, Industrie], type: text, match: exact}
+  status: {labels: [Angebotsstatus, Status], type: text, match: exact}
+  currency: {labels: [Währung, Waehrung], type: text, match: exact}
+  revision: {labels: [Revision, Rev, Index, Version], type: text, match: exact}
+
+item_fields:
+  position_number: {labels: [Position, Pos, Pos-Nr, Positionsnummer], type: integer, match: exact}
+  product_type: {labels: [Produkttyp, Produkt, Apparatetyp, Filtertyp, Typ], type: text, match: exact}
+  description: {labels: [Apparatebezeichnung, Bezeichnung, Benennung, Apparat], type: text, match: exact}
+  drawing_number: {labels: [Zeichnungsnummer, Zeichnungs-Nr, Zeichnung Nr, Zeichnung, Zchn-Nr], type: text}
+  dn: {labels: [DN, Nennweite, Nenndurchmesser], type: number, match: exact}
+  design_pressure: {labels: [Auslegungsdruck PS, Auslegungsdruck, PS, Betriebsdruck max], type: number, unit: bar}
+  design_temperature: {labels: [Auslegungstemperatur TS, Auslegungstemperatur, TS], type: temperature_range, unit: °C}
+  design_temperature_min: {labels: [TS min, Auslegungstemperatur min], type: number, unit: °C}
+  design_temperature_max: {labels: [TS max, Auslegungstemperatur max], type: number, unit: °C}
+  material: {labels: [Werkstoff, Material, Werkstoff Behälter, Werkstoff medienberührt], type: text}
+  diameter: {labels: [Behälterdurchmesser, Durchmesser, Außendurchmesser, Innendurchmesser], type: number, unit: mm}
+  wall_thickness: {labels: [Wandstärke, Wanddicke, Blechdicke], type: number, unit: mm}
+  height: {labels: [Apparatehöhe, Gesamthöhe, Höhe, Bauhöhe], type: number, unit: mm}
+  volume: {labels: [Behältervolumen, Volumen, Inhalt], type: number, unit: l}
+  filter_elements: {labels: [Anzahl Filterelemente, Anzahl Filterkerzen, Anzahl Kerzen, Anzahl Filterbeutel, Anzahl Beutel, Anzahl Elemente, Filterelemente], type: integer}
+  filter_area: {labels: [Filterfläche, Filterflaeche, Filtrationsfläche], type: number, unit: m²}
+  design_code: {labels: [Regelwerk, Auslegungsregelwerk, Code, Norm], type: text, match: exact}
+  weight: {labels: [Gewicht, Gesamtgewicht, Leergewicht, Apparategewicht], type: number, unit: kg}
+
+calculation_fields:
+  material_cost: {labels: [Materialkosten, Materialeinzelkosten, Materialkosten gesamt], type: number, unit: EUR}
+  material_overhead: {labels: [Materialgemeinkosten, MGK], type: number, unit: EUR}
+  purchased_parts_cost: {labels: [Zukaufteile, Kaufteile, Zukauf], type: number, unit: EUR}
+  manufacturing_hours: {labels: [Fertigungsstunden, Fertigungszeit, Stunden Fertigung], type: number, unit: h}
+  manufacturing_hourly_rate: {labels: [Fertigungsstundensatz, Stundensatz Fertigung, Stundensatz], type: number, unit: EUR/h}
+  manufacturing_cost: {labels: [Fertigungskosten, Lohnkosten Fertigung, Fertigungslohn], type: number, unit: EUR}
+  engineering_hours: {labels: [Konstruktionsstunden, Konstruktion Stunden, Stunden Konstruktion], type: number, unit: h}
+  engineering_cost: {labels: [Konstruktionskosten, Kosten Konstruktion], type: number, unit: EUR}
+  documentation_cost: {labels: [Dokumentationskosten, Dokumentation], type: number, unit: EUR}
+  inspection_cost: {labels: [Externe Prüfkosten, Prüfkosten, Abnahmekosten], type: number, unit: EUR}
+  ndt_tuev_cost: {labels: [ZFP/TÜV, ZFP, TÜV, ZfP / TÜV], type: number, unit: EUR}
+  surface_treatment_cost: {labels: [Oberflächenbehandlung, Oberfläche, Beizen/Passivieren, Beizen], type: number, unit: EUR}
+  procurement_cost: {labels: [Beschaffungskosten, Beschaffung, Fracht, Verpackung und Fracht], type: number, unit: EUR}
+  sales_overhead: {labels: [Vertriebsgemeinkosten, VVGK, VGK, Verwaltungs- und Vertriebsgemeinkosten], type: number, unit: EUR}
+  risk_profit: {labels: [Risiko-/Gewinnzuschlag, Risiko und Gewinn, Gewinnzuschlag, Gewinn, Wagnis und Gewinn], type: number, unit: EUR}
+  total_cost: {labels: [Selbstkosten, Selbstkosten gesamt], type: number, unit: EUR}
+  offer_price: {labels: [Angebotspreis, Verkaufspreis, Angebotspreis netto, Nettopreis, Preis netto], type: number, unit: EUR}
+  calculation_date: {labels: [Kalkulationsdatum, Datum Kalkulation], type: date, match: exact}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block title %}Ähnlichkeitssuche – HETA{% endblock %}
+{% block content %}
+<h1>Ähnlichkeitssuche</h1>
+<section class="card">
+  <form method="get" class="grid-form">
+    <label>Produkttyp<input name="product_type" list="types" value="{{ raw.product_type }}" placeholder="z. B. Kerzenfilter"></label>
+    <datalist id="types">{% for t in types %}<option>{{ t }}</option>{% endfor %}</datalist>
+    <label>DN<input name="dn" value="{{ raw.dn }}" inputmode="decimal"></label>
+    <label>PS [bar]<input name="design_pressure" value="{{ raw.design_pressure }}" inputmode="decimal"></label>
+    <label>Werkstoff<input name="material" value="{{ raw.material }}" placeholder="z. B. 1.4571"></label>
+    <label>Filterfläche [m²]<input name="filter_area" value="{{ raw.filter_area }}" inputmode="decimal"></label>
+    <label>Gewicht [kg]<input name="weight" value="{{ raw.weight }}" inputmode="decimal"></label>
+    <label>Filterelemente<input name="filter_elements" value="{{ raw.filter_elements }}" inputmode="numeric"></label>
+    <div class="form-actions"><button class="btn primary" type="submit">Ähnliche Positionen suchen</button></div>
+  </form>
+  <p class="hint">Gewichtung (config/similarity.yaml):
+    {% for k, f in config.features.items() %}{{ FIELD_LABELS.get(k, k) }} {{ f.weight|de_auto }}{{ ', ' if not loop.last }}{% endfor %}.
+    Fehlende Merkmale werden nicht als 0 gewertet, sondern aus dem Vergleich genommen. Rangfolge = Ähnlichkeit × Abdeckung (Anteil der vergleichbaren Gewichte).</p>
+</section>
+
+{% if searched %}
+<section class="card">
+  <h2>Top {{ matches|length }} Treffer</h2>
+  {% if not matches %}<p class="muted">Keine vergleichbaren Positionen mit den angegebenen Merkmalen gefunden.</p>{% endif %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Angebot</th><th>Produkttyp</th><th>Eckdaten</th><th class="num">Ähnlichkeit</th><th class="num">Abdeckung</th><th class="num">Angebotspreis [€]</th><th class="num">€/kg</th><th class="num">Fertigung [h]</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for m in matches %}{% set d = m.data %}
+    <tr>
+      <td class="nowrap"><a href="/angebote/{{ d.offer_id }}">{{ d.offer_number }}</a> · Pos. {{ d.position }}</td>
+      <td>{{ d.product_type or '–' }}</td>
+      <td class="small">DN {{ d.dn|de_auto }} · PS {{ d.design_pressure|de_auto }} bar · {{ d.material or '–' }} · {{ d.filter_area|de_auto }} m² · {{ d.filter_elements|de_auto }} El. · {{ d.weight|de_auto }} kg</td>
+      <td class="num"><strong>{{ (m.similarity * 100)|de_num(0) }} %</strong></td>
+      <td class="num">{{ (m.coverage * 100)|de_num(0) }} %{% if d.low_coverage %} <span class="badge warn" title="Wenige vergleichbare Merkmale">gering</span>{% endif %}</td>
+      <td class="num">{{ d.offer_price|de_num(2) }}</td>
+      <td class="num">{{ d.price_per_kg|de_num(2) }}</td>
+      <td class="num">{{ d.manufacturing_hours|de_num(1) }}</td>
+      <td>{{ d.status or '–' }} {{ status_badge(d.validation_status) }}</td>
+    </tr>
+    <tr class="explain"><td colspan="9">
+      <details><summary class="small">Bewertung nachvollziehen</summary>
+      <table class="table compact"><tr><th>Merkmal</th><th>Anfrage</th><th>Historisch</th><th class="num">Gewicht</th><th class="num">Teilähnlichkeit</th><th>Hinweis</th></tr>
+      {% for f in m.details %}<tr><td>{{ FIELD_LABELS.get(f.feature, f.feature) }}</td><td>{{ f.query|de_auto }}</td><td>{{ f.candidate|de_auto }}</td><td class="num">{{ f.weight|de_auto }}</td>
+        <td class="num">{{ ((f.score * 100)|de_num(0) ~ ' %') if f.score is not none else '–' }}</td><td class="small">{{ f.note }}</td></tr>{% endfor %}
+      </table></details>
+    </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint">Preise historischer Angebote sind keine Kalkulationsempfehlung. Positionen mit Status „Prüfbedarf“ enthalten ungeprüfte Werte.</p>
+</section>
+{% endif %}
+{% endblock %}
