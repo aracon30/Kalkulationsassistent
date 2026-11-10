@@ -166,3 +166,15 @@ def test_service_view_and_offer_page(client, env):
     assert r.status_code == 200 and "Service Experte" in r.text and "Ausland" in r.text and "DE-99941.26" in r.text
     r = client.get("/angebote/1")
     assert "Serviceeinsatz" in r.text and "Wartung" in r.text
+
+
+def test_review_list_hides_info_by_default(client, imported):
+    from app.database import session_scope
+    from app.models import ReviewIssue
+    with session_scope() as s:
+        s.add(ReviewIssue(code="testhinweis", message="NUR-INFO-XYZ", severity="info"))
+        s.add(ReviewIssue(code="testwarnung", message="WARN-XYZ", severity="warnung"))
+    r = client.get("/pruefung")
+    assert "WARN-XYZ" in r.text and "NUR-INFO-XYZ" not in r.text and "testhinweis (1 Hinweise)" in r.text
+    assert "NUR-INFO-XYZ" in client.get("/pruefung?stufe=alle").text
+    assert "NUR-INFO-XYZ" in client.get("/pruefung?code=testhinweis").text

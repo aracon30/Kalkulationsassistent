@@ -65,17 +65,26 @@ def _target(db: Session, issue: ReviewIssue, ev: ExtractionValue | None, field: 
 
 @router.get("/pruefung")
 def review_list(request: Request, status: str = "offen", code: str | None = None, angebot: str | None = None,
-                msg: str | None = None, err: str | None = None, db: Session = Depends(get_db)):
+                stufe: str = "pruefen", msg: str | None = None, err: str | None = None, db: Session = Depends(get_db)):
     stmt = select(ReviewIssue).where(ReviewIssue.status == status)
     if code:
         stmt = stmt.where(ReviewIssue.code == code)
+    elif stufe != "alle":
+        # Standard: nur Warnungen und Fehler; Hinweise (info) über die Art-Auswahl oder "inkl. Hinweise"
+        stmt = stmt.where(ReviewIssue.severity != "info")
     if angebot:
         stmt = stmt.join(Offer, ReviewIssue.offer_id == Offer.id).where(Offer.offer_number.ilike(f"%{angebot}%"))
     issues = list(db.scalars(stmt.order_by(ReviewIssue.severity.desc(), ReviewIssue.id.desc()).limit(500)))
-    codes = db.execute(select(ReviewIssue.code, func.count(ReviewIssue.id)).where(ReviewIssue.status == status).group_by(ReviewIssue.code)).all()
+    rows = db.execute(select(ReviewIssue.code, ReviewIssue.severity, func.count(ReviewIssue.id)).where(ReviewIssue.status == status)
+                      .group_by(ReviewIssue.code, ReviewIssue.severity)).all()
+    agg: dict[str, list[int]] = {}
+    for c, sev, n in rows:
+        a = agg.setdefault(c, [0, 0])
+        a[0 if sev != "info" else 1] += n
+    codes = sorted(((c, a[0], a[1]) for c, a in agg.items()), key=lambda x: (x[1] == 0, x[0]))
     editable = sorted(set(ITEM_FIELDS + COST_FIELDS + OFFER_FIELDS + ["calculation_date"]) - {"position_number"})
     return templates.TemplateResponse(request, "review.html", {"nav": "pruefung", "issues": issues, "codes": codes, "status": status,
-                                                               "code": code or "", "angebot": angebot or "", "msg": msg, "err": err,
+                                                               "code": code or "", "angebot": angebot or "", "stufe": stufe, "msg": msg, "err": err,
                                                                "editable": editable})
 
 

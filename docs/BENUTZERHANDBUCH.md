@@ -63,7 +63,9 @@ Version/Revision und Importstatus. Mit „ältere Versionen“ werden auch erset
 
 ## 5. Prüfcenter
 
-Listet alle offenen Prüfpunkte, z. B.:
+Listet offene Prüfpunkte. Standardmäßig nur **Warnungen und Fehler**; **Hinweise** (z. B. ignorierte
+Kopien, PDF ohne Text, unsichere Zuordnung, Stückzahl > 1) erscheinen mit „inkl. Hinweise“ oder über die
+Art-Auswahl. Beispiele:
 
 - Angebotspreis nicht gefunden (`preis_fehlt`)
 - Excel-Formel ohne gespeicherten Ergebniswert (`formel_ohne_cache`)

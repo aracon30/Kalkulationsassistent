@@ -5,11 +5,13 @@
 <div class="page-head"><h1>Prüfcenter</h1><a class="btn" href="/pruefung/protokoll">Prüfprotokoll</a></div>
 <form class="filters" method="get">
   <select name="status"><option value="offen" {{ 'selected' if status == 'offen' }}>offen</option><option value="erledigt" {{ 'selected' if status == 'erledigt' }}>erledigt</option></select>
-  <select name="code"><option value="">Alle Arten</option>{% for c, n in codes %}<option value="{{ c }}" {{ 'selected' if code == c }}>{{ c }} ({{ n }})</option>{% endfor %}</select>
+  <select name="stufe"><option value="pruefen" {{ 'selected' if stufe != 'alle' }}>Warnungen und Fehler</option><option value="alle" {{ 'selected' if stufe == 'alle' }}>inkl. Hinweise</option></select>
+  <select name="code"><option value="">Alle Arten</option>
+    {% for c, warn, info in codes %}<option value="{{ c }}" {{ 'selected' if code == c }}>{{ c }} ({% if warn %}{{ warn }}{% if info %} + {{ info }} Hinweise{% endif %}{% else %}{{ info }} Hinweise{% endif %})</option>{% endfor %}</select>
   <input name="angebot" value="{{ angebot }}" placeholder="Angebotsnummer">
   <button class="btn" type="submit">Filtern</button>
 </form>
-<p class="hint">Jede Freigabe und Korrektur wird mit Name, Zeitpunkt, altem und neuem Wert protokolliert. Originaldateien werden nie verändert.</p>
+<p class="hint">Standardmäßig werden nur Warnungen und Fehler gezeigt. Hinweise (z. B. ignorierte Kopien, PDF ohne Text, unsichere Zuordnung) sind informativ – über „inkl. Hinweise“ oder die Art-Auswahl sichtbar.<br>Jede Freigabe und Korrektur wird mit Name, Zeitpunkt, altem und neuem Wert protokolliert. Originaldateien werden nie verändert.</p>
 <datalist id="fields">{% for f in editable %}<option value="{{ f }}">{{ FIELD_LABELS.get(f, f) }}</option>{% endfor %}</datalist>
 <div class="table-wrap">
 <table class="table">
