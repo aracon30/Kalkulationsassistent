@@ -494,6 +494,15 @@ def _drop_implausible_wall(fields: dict) -> None:
         w.method = "verworfen"
 
 
+def _material_conflict(current, other) -> bool:
+    """Kalkulation nennt mehrere Werkstoffe ('304 / 316'): passt einer davon, ist es kein Widerspruch."""
+    parts = [p for p in re.split(r"\s*(?:/|\+|,|;| und | oder )\s*", str(current or "")) if p.strip()]
+    if len(parts) < 2:
+        return validation.values_conflict(current, other)
+    other_norm = normalize_material(other)[0]
+    return all(validation.values_conflict(normalize_material(p)[0], other_norm) for p in parts)
+
+
 def _same_number(text: str, offer_number: str) -> bool:
     """'13533/26' oder 'DE.-13423/25' bezeichnen dasselbe Angebot wie PT-13533.26 bzw. DE-13423.25."""
     m = re.search(r"(\d{5})\D{1,3}(\d{2})(?!\d)", text)
@@ -909,6 +918,8 @@ def _import_drawing(session: Session, offer: Offer, doc: Document, pdf: PdfExtra
         same = by_field[v.field_name]
         if v.field_name == "design_code":
             conflict = lambda a, b: _code_family(a) is not None and _code_family(b) is not None and _code_family(a) != _code_family(b)  # noqa: E731
+        elif v.field_name == "material":
+            conflict = _material_conflict
         else:
             conflict = validation.values_conflict
         if current is None:

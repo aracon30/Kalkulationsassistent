@@ -548,3 +548,9 @@ def test_forced_reimport_reevaluates_previously_skipped_files(db, env):
     run_import(db, force=True)
     db.refresh(doc)
     assert doc.import_status == ImportStatus.IMPORTIERT and doc.profile_id == "serviceeinsatz"
+
+
+def test_material_list_in_calculation_is_no_conflict():
+    from app.services.import_service import _material_conflict
+    assert not _material_conflict("304 / 316", "1.4301")
+    assert _material_conflict("304 / 316", "1.4571") and _material_conflict("1.4401", "1.4404")
