@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 101 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 102 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -248,3 +248,13 @@ Zeilenart automatisch: Personal, Tagessatz/Spesen, Unterkunft, Reise, Fahrkosten
 Betrag zum Auslandssatz passt. Anzeige: Angebotsansicht und *Materialpreise → Ansicht „Service“*
 (Sätze je Leistung mit min/Median/max/zuletzt, Einsätze mit Stunden, Tagen, Nächten, km, Preis).
 Offen: Montage-/Software-Kalkulationen (anderer Aufbau?) und ~11 Kalkulationen mit unbekanntem Aufbau.
+
+## 13. Importgeschwindigkeit
+
+Excel- und PDF-Dateien werden in mehreren Prozessen vorausgelesen (`app/services/prefetch.py`,
+Standard: CPU-Kerne − 1, höchstens 4; `HETA_IMPORT_WORKERS=1` schaltet es ab). Die Datenbank wird
+weiterhin nacheinander mit einer Transaktion je Angebot geschrieben; schlägt das Vorauslesen fehl,
+liest der Import die Datei selbst (gleiche Fehlermeldungen). Außerdem wird nicht mehr nach jedem
+einzelnen Wert in die Datenbank geschrieben (flush). Messung mit 80 synthetischen Dateien lokal:
+4,6 s → 2,0 s. Auf Netzlaufwerken ist der Gewinn voraussichtlich größer (Kopieren läuft parallel),
+aber nicht gemessen.

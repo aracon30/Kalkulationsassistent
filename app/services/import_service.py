@@ -34,6 +34,7 @@ from app.services.folder_scanner import SUPPORTED_EXTENSIONS, ScanResult, scan_d
 from app.services.normalize import normalize_material, normalize_product_type
 from app.services.offer_numbers import detect_offer_number, detect_revision, find_offer_numbers
 from app.services.pdf_importer import PdfExtraction, extract_pdf
+from app.services.prefetch import Prefetcher, task_for
 
 log = logging.getLogger(__name__)
 
@@ -259,6 +260,7 @@ def run_import(session: Session, reporter: Reporter | None = None, force: bool =
                profiles: dict[str, ImportProfile] | None = None, retry_failed: bool = False) -> ImportSummary:
     reporter = reporter or Reporter()
     summary = ImportSummary()
+    own_profiles = profiles is None
     profiles = profiles or load_profiles(get_settings().profiles_dir)
     docs = pending_documents(session, force, base_dir, retry_failed)
     groups: dict[str | None, list[Document]] = defaultdict(list)
@@ -276,6 +278,21 @@ def run_import(session: Session, reporter: Reporter | None = None, force: bool =
 
     total = sum(len(v) for v in groups.values())
     done = 0
+    # Dateien in Bearbeitungsreihenfolge parallel vorauslesen (nur mit den Standardprofilen)
+    plan = []
+    for offer_number in sorted(groups):
+        for d in sorted(groups[offer_number], key=_doc_order):
+            kind = task_for(d.document_type, d.extension)
+            if kind == "pdf" or (kind == "excel" and own_profiles):
+                plan.append((d.id, kind, d.file_path, d.document_type))
+    with Prefetcher(plan, str(get_settings().profiles_dir)) as prefetch:
+        _import_groups(session, groups, profiles, force, reporter, summary, prefetch, total)
+    return summary
+
+
+def _import_groups(session: Session, groups: dict, profiles: dict[str, ImportProfile], force: bool, reporter: Reporter,
+                   summary: ImportSummary, prefetch: Prefetcher, total: int) -> None:
+    done = 0
     for offer_number in sorted(groups):
         group = groups[offer_number]
         if reporter.cancelled and reporter.cancelled():
@@ -284,7 +301,7 @@ def run_import(session: Session, reporter: Reporter | None = None, force: bool =
         doc_ids = [d.id for d in group]
         try:
             stats = import_offer_group(session, offer_number, group, profiles, force, reporter,
-                                       lambda name: reporter.tick(done, total, name))
+                                       lambda name: reporter.tick(done, total, name), prefetch)
             session.commit()
             summary.offers += 1
             summary.imported += stats["imported"]
@@ -311,7 +328,6 @@ def run_import(session: Session, reporter: Reporter | None = None, force: bool =
             reporter.commit_point()
         done += len(group)
         reporter.tick(done, total, offer_number)
-    return summary
 
 
 def _issue(session: Session, code: str, message: str, severity: str = "warnung", *, offer: Offer | None = None,
@@ -412,8 +428,7 @@ def _store_value(session: Session, doc: Document, ex: Extracted, *, profile_vali
         cached_value=None if ex.cached is None else str(ex.cached), extraction_method=ex.method,
         confidence=ex.confidence, validation_status=status, validation_message="; ".join(filter(None, [msg] + messages)) or None,
     )
-    session.add(ev)
-    session.flush()
+    session.add(ev)  # kein flush je Wert (teuer); _issue und Abfragen flushen bei Bedarf
     for r in rule_issues:
         _issue(session, r.code or "regel", f"{doc.file_name}: {r.message}", "warnung", item=item, document=doc, value=ev)
     for iss in ex.issues:
@@ -804,8 +819,8 @@ def _assign_drawing(session: Session, offer: Offer, doc: Document, pdf: PdfExtra
     return None, "Keine eindeutige Position gefunden"
 
 
-def _import_drawing(session: Session, offer: Offer, doc: Document) -> list[str]:
-    pdf = extract_pdf(doc.file_path)
+def _import_drawing(session: Session, offer: Offer, doc: Document, pdf: PdfExtraction | None = None) -> list[str]:
+    pdf = pdf or extract_pdf(doc.file_path)
     doc.page_count, doc.has_text = pdf.page_count, pdf.has_text
     for msg in pdf.issues:
         _issue(session, "pdf_ohne_text", f"{doc.file_name}: {msg}", "info", offer=offer, document=doc)
@@ -877,15 +892,25 @@ def _copy_reason(session: Session, doc: Document, offer_number: str, named: list
     return None
 
 
+_DOC_ORDER = {DocType.KALKULATION: 0, DocType.FERTIGUNGSZEIT: 1, DocType.ZEICHNUNG: 2}
+
+
+def _doc_order(d: Document):
+    return (_DOC_ORDER.get(d.document_type, 9), d.modified_at or datetime.min, d.file_path)
+
+
+def _read(prefetch: Prefetcher | None, doc: Document, fallback):
+    return prefetch.get(doc.id, fallback) if prefetch else fallback()
+
+
 def import_offer_group(session: Session, offer_number: str, docs: list[Document], profiles: dict[str, ImportProfile],
-                       force: bool, reporter: Reporter, on_file: Callable[[str], None]) -> dict:
+                       force: bool, reporter: Reporter, on_file: Callable[[str], None], prefetch: Prefetcher | None = None) -> dict:
     """Importiert alle Dokumente eines Angebots. Der Aufrufer committet oder rollt zurück."""
     stats = {"imported": 0, "failed": 0, "log": []}
     offer = _get_or_create_offer(session, offer_number)
     if force:
         _reset_offer(session, offer)
-    order = {DocType.KALKULATION: 0, DocType.FERTIGUNGSZEIT: 1, DocType.ZEICHNUNG: 2}
-    docs = sorted(docs, key=lambda d: (order.get(d.document_type, 9), d.modified_at or datetime.min, d.file_path))
+    docs = sorted(docs, key=_doc_order)
     kalk_docs: list[Document] = []
     named = [d for d in docs if d.document_type == DocType.KALKULATION and _names_offer(d, offer_number)]
     for d in [d for d in docs if d.document_type == DocType.KALKULATION]:
@@ -893,6 +918,8 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
         if reason is None:
             continue
         docs.remove(d)
+        if prefetch:
+            prefetch.skip(d.id)
         d.offer_id = offer.id
         d.import_status = ImportStatus.IGNORIERT
         d.import_message = reason
@@ -914,7 +941,7 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
             notes: list[str] = []
             if doc.document_type in (DocType.KALKULATION, DocType.FERTIGUNGSZEIT) and doc.extension in (".xlsx", ".xlsm"):
                 with session.begin_nested():
-                    ex = extract_workbook(doc.file_path, profiles, doc.document_type)
+                    ex = _read(prefetch, doc, lambda: extract_workbook(doc.file_path, profiles, doc.document_type))
                     if _nothing_usable(ex):
                         doc.import_status = ImportStatus.IGNORIERT
                         doc.import_message = f"Vorlage nicht erkannt – keine Kalkulationswerte gefunden (Profil {ex.profile_id})"
@@ -928,7 +955,7 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
                     kalk_docs.append(doc)
             elif doc.document_type == DocType.ZEICHNUNG and doc.extension == ".pdf":
                 with session.begin_nested():
-                    notes = _import_drawing(session, offer, doc)
+                    notes = _import_drawing(session, offer, doc, _read(prefetch, doc, lambda: extract_pdf(doc.file_path)))
             else:
                 notes = ["Dokument dem Angebot zugeordnet (keine Datenextraktion)"]
             if doc.classification_status in (ClassStatus.MANUELL,):
