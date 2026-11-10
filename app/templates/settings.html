@@ -9,6 +9,8 @@
     <label>Basisverzeichnis<input name="base_dir" value="{{ s.base_dir or '' }}" placeholder="\\SERVER\Freigabe\Angebote"></label>
     <label>Muster für Angebotsnummern (reguläre Ausdrücke, je Zeile einer; Gruppen <code>num</code> und <code>year</code>)
       <textarea name="offer_number_patterns" rows="3" class="mono">{{ s.offer_number_patterns|join('\n') }}</textarea></label>
+    <label>Ausgeschlossene Ordner (je Zeile ein Name, Platzhalter * erlaubt, z. B. <code>*MUSTERORDNER*</code>)
+      <textarea name="excluded_dir_names" rows="4" class="mono">{{ s.excluded_dir_names|join('\n') }}</textarea></label>
     <label>Maximale Dateigröße [MB]<input name="max_file_size_mb" type="number" min="1" max="2000" value="{{ s.max_file_size_mb }}"></label>
     <button class="btn primary" type="submit">Speichern</button>
   </form>

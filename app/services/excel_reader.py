@@ -23,6 +23,8 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.exceptions import InvalidFileException
 
+from app.services.folder_scanner import fs_path
+
 
 class ExcelReadError(Exception):
     def __init__(self, message: str, kind: str = "fehler"):
@@ -104,7 +106,7 @@ class WorkbookData:
         suffix = self.original_path.suffix.lower() or ".xlsx"
         self.tmp_path = Path(self._tmpdir.name) / f"kopie{suffix}"
         try:
-            shutil.copyfile(self.original_path, self.tmp_path)
+            shutil.copyfile(fs_path(self.original_path), self.tmp_path)
         except PermissionError as exc:
             self.close()
             raise ExcelReadError(f"Datei gesperrt oder keine Leseberechtigung: {exc.strerror or exc}", "gesperrt") from exc
@@ -185,7 +187,7 @@ class WorkbookData:
 
 def peek_workbook(path: str | Path, max_cells: int = 400) -> tuple[list[str], list[str]]:
     """Schneller Blick in eine Mappe für die Klassifizierung: Blattnamen und erste Textzellen."""
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True, keep_vba=False, keep_links=False)
+    wb = openpyxl.load_workbook(fs_path(path), read_only=True, data_only=True, keep_vba=False, keep_links=False)
     try:
         labels: list[str] = []
         for ws in wb.worksheets:
@@ -226,7 +228,7 @@ def recalculate_copy(path: str | Path, timeout: int = 120) -> Path | None:
         return None
     workdir = Path(tempfile.mkdtemp(prefix="heta_recalc_"))
     src = workdir / ("quelle" + Path(path).suffix.lower())
-    shutil.copyfile(path, src)
+    shutil.copyfile(fs_path(path), src)
     outdir = workdir / "out"
     outdir.mkdir()
     profile = (workdir / "lo_profile").as_uri()

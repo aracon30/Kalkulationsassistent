@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 75 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 82 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -103,3 +103,23 @@ Bekannte Grenzen:
   der Scan liest bei jedem Lauf alle Verzeichniseinträge, hasht aber nur geänderte Dateien.
 - Erzwungener Neuimport legt Kalkulationswerte neu an; manuelle Korrekturen an
   Kalkulationswerten werden dabei nicht automatisch erneut angewendet.
+
+## 6. Änderungen nach dem ersten Scan auf K:\ (0.1.1)
+
+Erkenntnisse aus dem ersten Echtlauf (5.216 Dateien, „K:\01 HETA\01 ANGEBOTE\01 ab 2026“):
+
+- **Angebotsnummern `AE-12345.26`** werden jetzt erkannt (Muster: zwei Buchstaben, 5 Ziffern, Punkt, Jahr).
+  Ein unverändert gespeichertes altes Standardmuster (nur `SE-`) wird automatisch ersetzt.
+- **Ordner vor Dateiname:** Die Nummer des Angebotsordners ist maßgeblich; nennt der Dateiname
+  ein anderes Angebot (kopierte Referenz), wird das nur als Hinweis gespeichert.
+- **Ordnerstruktur als Erkennungsmerkmal:** `…\02 Kalkulationen` → Kalkulation, `…\01 Maßblatt` /
+  `Zeichnungen` → Zeichnung, `…\03 Angebot\AE-xxxxx.xx.pdf` → Kundenangebot u. a.
+- **`*MUSTERORDNER*`** wird standardmäßig übersprungen (Ausschlussliste in den Einstellungen bearbeitbar).
+- **Duplikate nur innerhalb eines Angebots:** dieselbe Datei in Ordnern verschiedener Angebote wird
+  jedem Angebot zugeordnet.
+- **Schnellerer Scan:** nicht auswertbare Dateien (Mails, Word, CAD, Bilder) werden nicht mehr gelesen
+  (nur Größe/Datum); `.tmp` und `.lnk` werden ignoriert.
+- **Windows-Pfade:** Dateien werden über das erweiterte Präfix `\\?\` geöffnet (lange Pfade, Namen mit
+  Leerzeichen/Punkt am Ende).
+- **Neu-Bewertung:** Bei geänderten Erkennungsregeln werden unveränderte, noch nicht importierte Dateien
+  beim nächsten Scan neu klassifiziert, ohne sie erneut zu hashen (Datenbankmigration 0002).

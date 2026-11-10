@@ -65,7 +65,7 @@ aus dem Auftrag, prüft per SHA-256, dass die Originale unverändert bleiben, un
 python -m pytest
 ```
 
-75 automatisierte Tests: Ordnerscan, Angebotsnummern, UNC-Pfade, Klassifizierung, Excel-Import,
+82 automatisierte Tests: Ordnerscan, Angebotsnummern, UNC-Pfade, Klassifizierung, Excel-Import,
 Mehrpositionsangebote, Formel-Caches (fehlend/veraltet), Dubletten, Importwiederholung,
 Transaktionen/Abbruch, Kalkulationslogik, Ähnlichkeitssuche, KI-Provider-Auswahl, Weboberfläche,
 Sicherheit (Host-/Origin-Prüfung, Dateizugriff nur per ID), Backup.

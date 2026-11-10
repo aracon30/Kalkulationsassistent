@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import traceback
@@ -26,10 +27,10 @@ from app.models import (
     OfferItem, ReviewIssue, ValStatus,
 )
 from app.services import validation
-from app.services.document_classifier import DRAWING_NAME_RE, PRODUCT_PREFIXES, classify_file
+from app.services.document_classifier import CLASSIFIER_VERSION, DRAWING_NAME_RE, PRODUCT_PREFIXES, classify_file
 from app.services.excel_importer import Extracted, ImportProfile, Issue, ProfileError, WorkbookExtraction, extract_workbook, load_profiles
 from app.services.excel_reader import ExcelReadError
-from app.services.folder_scanner import ScanResult, scan_directory, sha256_file
+from app.services.folder_scanner import SUPPORTED_EXTENSIONS, ScanResult, scan_directory, sha256_file
 from app.services.normalize import normalize_material, normalize_product_type
 from app.services.offer_numbers import detect_offer_number, detect_revision
 from app.services.pdf_importer import PdfExtraction, extract_pdf
@@ -84,6 +85,7 @@ class ScanSummary:
     changed_documents: int = 0
     unchanged: int = 0
     duplicates: int = 0
+    reclassified: int = 0
     problems: list[str] = field(default_factory=list)
     cancelled: bool = False
 
@@ -120,8 +122,51 @@ def scan_and_inventory(session: Session, base_dir: str, reporter: Reporter | Non
             session.commit()
             reporter.commit_point()
     session.commit()
+    reporter.log(None, None, None, "scan", "hinweis",
+                 f"Zusammenfassung: {summary.files_found} Dateien, {summary.new_documents} neu, {summary.changed_documents} geändert, "
+                 f"{summary.unchanged} unverändert, davon {summary.reclassified} neu bewertet, {summary.duplicates} Duplikate, "
+                 f"{len(summary.problems)} Probleme")
     reporter.commit_point()
     return summary
+
+
+def _meta_hash(path: str, size: int, modified_at) -> str:
+    """Kennung für nicht auswertbare Dateitypen (Mails, Word, CAD …): kein Lesen des Inhalts."""
+    return hashlib.sha256(f"meta|{path}|{size}|{modified_at}".encode("utf-8")).hexdigest()
+
+
+RECLASSIFY_STATUSES = {ImportStatus.NEU, ImportStatus.IGNORIERT, ImportStatus.FEHLER, ImportStatus.NICHT_UNTERSTUETZT}
+
+
+def _classify_into(session: Session, doc: Document, summary: ScanSummary) -> None:
+    """Klassifizierung, Angebotsnummer, Revision und Duplikatprüfung (setzt auch den Importstatus)."""
+    cls = classify_file(doc.file_path)
+    offer = detect_offer_number(doc.file_path)
+    doc.document_type, doc.classification_status = cls.document_type, cls.status
+    doc.classification_rule, doc.classification_confidence = cls.rule_text, cls.confidence
+    doc.detected_offer_number = offer.number if offer else None
+    doc.offer_number_source = offer.source if offer else None
+    doc.revision_label = detect_revision(doc.file_name)[0]
+    doc.page_count, doc.has_text = cls.page_count, cls.has_text
+    doc.classifier_version = CLASSIFIER_VERSION
+    doc.import_status, doc.import_message, doc.duplicate_of_id = ImportStatus.NEU, None, None
+    dup = None
+    if doc.content_hashed:
+        # Duplikat nur innerhalb desselben Angebots: dieselbe Datei in einem anderen Angebotsordner
+        # (z. B. kopierte Kalkulation) gehört zu jenem Angebot.
+        q = select(Document).where(Document.file_hash == doc.file_hash, Document.file_path != doc.file_path,
+                                   Document.is_current.is_(True), Document.duplicate_of_id.is_(None))
+        q = q.where(Document.detected_offer_number == doc.detected_offer_number) if doc.detected_offer_number else q.where(Document.detected_offer_number.is_(None))
+        if doc.id:
+            q = q.where(Document.id < doc.id)
+        dup = session.scalars(q.order_by(Document.id)).first()
+    if cls.status == ClassStatus.NICHT_UNTERSTUETZT:
+        doc.import_status, doc.import_message = ImportStatus.NICHT_UNTERSTUETZT, cls.rule_text
+    elif dup:
+        doc.import_status, doc.import_message, doc.duplicate_of_id = ImportStatus.IGNORIERT, f"Inhaltsgleiches Duplikat von {dup.file_path}", dup.id
+        summary.duplicates += 1
+    elif cls.document_type not in IMPORTABLE_TYPES:
+        doc.import_status, doc.import_message = ImportStatus.IGNORIERT, "Dokumenttyp ohne Datenimport"
 
 
 def _inventory_file(session: Session, f, found: ScanResult, summary: ScanSummary, reporter: Reporter) -> None:
@@ -130,13 +175,23 @@ def _inventory_file(session: Session, f, found: ScanResult, summary: ScanSummary
     if current and current.file_size == f.size and current.modified_at == f.modified_at:
         current.scanned_at = now
         summary.unchanged += 1
+        if current.classifier_version != CLASSIFIER_VERSION and current.import_status in RECLASSIFY_STATUSES:
+            _classify_into(session, current, summary)  # Regeln geändert -> neu bewerten (Datei unverändert)
+            summary.reclassified += 1
         return
     if f.path.lower() in found.locked_hints:
         reporter.log(None, None, f.path, "scan", "hinweis", "Excel-Sperrdatei gefunden – Datei ist evtl. geöffnet; es wird eine Kopie gelesen")
-    try:
-        file_hash = sha256_file(f.path)
-    except PermissionError as exc:
-        raise PermissionError(f"Datei gesperrt oder keine Leseberechtigung ({exc.strerror or exc})") from exc
+    content_hashed = f.extension in SUPPORTED_EXTENSIONS
+    if content_hashed:
+        try:
+            file_hash = sha256_file(f.path)
+        except PermissionError as exc:
+            raise PermissionError(f"Datei gesperrt oder keine Leseberechtigung ({exc.strerror or exc})") from exc
+        except FileNotFoundError as exc:
+            raise FileNotFoundError("Datei beim Lesen nicht mehr vorhanden (während des Scans verschoben/umbenannt?) "
+                                    "oder Name von Windows nicht auflösbar") from exc
+    else:
+        file_hash = _meta_hash(f.path, f.size, f.modified_at)
 
     existing = session.scalars(select(Document).where(Document.file_path == f.path, Document.file_hash == file_hash)).first()
     if existing:
@@ -155,28 +210,14 @@ def _inventory_file(session: Session, f, found: ScanResult, summary: ScanSummary
             d.is_current = False
             if d.import_status == ImportStatus.NEU:
                 d.import_status = ImportStatus.VERALTET
-    cls = classify_file(f.path)
-    offer = detect_offer_number(f.path)
-    rev_label, _ = detect_revision(f.name)
-    dup = session.scalars(select(Document).where(Document.file_hash == file_hash, Document.file_path != f.path, Document.is_current.is_(True))).first()
     doc = Document(
-        file_path=f.path, relative_path=f.relative_path, file_name=f.name, extension=f.extension,
-        document_type=cls.document_type, classification_status=cls.status, classification_rule=cls.rule_text,
-        classification_confidence=cls.confidence, detected_offer_number=offer.number if offer else None,
-        offer_number_source=offer.source if offer else None, file_hash=file_hash, file_size=f.size,
-        modified_at=f.modified_at, scanned_at=now, version=(max((d.version for d in versions), default=0) + 1),
-        is_current=True, revision_label=rev_label, page_count=cls.page_count, has_text=cls.has_text,
-        duplicate_of_id=dup.id if dup else None,
+        file_path=f.path, relative_path=f.relative_path, file_name=f.name, extension=f.extension, file_hash=file_hash,
+        content_hashed=content_hashed, file_size=f.size, modified_at=f.modified_at, scanned_at=now,
+        version=(max((d.version for d in versions), default=0) + 1), is_current=True,
     )
-    if cls.status == ClassStatus.NICHT_UNTERSTUETZT:
-        doc.import_status, doc.import_message = ImportStatus.NICHT_UNTERSTUETZT, cls.rule_text
-    elif dup:
-        doc.import_status, doc.import_message = ImportStatus.IGNORIERT, f"Inhaltsgleiches Duplikat von {dup.file_path}"
-        summary.duplicates += 1
-    elif cls.document_type not in IMPORTABLE_TYPES:
-        doc.import_status, doc.import_message = ImportStatus.IGNORIERT, "Dokumenttyp ohne Datenimport"
     session.add(doc)
     session.flush()
+    _classify_into(session, doc, summary)
     if versions:
         summary.changed_documents += 1
     else:

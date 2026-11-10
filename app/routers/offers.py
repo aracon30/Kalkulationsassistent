@@ -17,6 +17,7 @@ from app.models import (
     AIRequestLog, Calculation, COST_FIELDS, Document, DocType, ExtractionValue, ManufacturingOperation, Offer, OfferItem,
     ReviewIssue, ValStatus,
 )
+from app.services.folder_scanner import fs_path
 from app.services.pdf_importer import extract_pdf, render_page_png
 from app.web import redirect, templates
 
@@ -145,8 +146,7 @@ def _document_or_404(db: Session, document_id: int) -> Document:
     doc = db.get(Document, document_id)
     if not doc:
         raise HTTPException(404, "Dokument nicht gefunden")
-    path = Path(doc.file_path)
-    if not path.is_file():
+    if not os.path.isfile(fs_path(doc.file_path)):
         raise HTTPException(404, "Datei ist nicht mehr am ursprünglichen Ort vorhanden")
     return doc
 
@@ -157,7 +157,7 @@ def document_file(document_id: int, db: Session = Depends(get_db)):
     media = {".pdf": "application/pdf", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
              ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12"}.get(doc.extension or "", "application/octet-stream")
     inline = doc.extension == ".pdf"
-    return FileResponse(doc.file_path, media_type=media, filename=doc.file_name,
+    return FileResponse(fs_path(doc.file_path), media_type=media, filename=doc.file_name,
                         content_disposition_type="inline" if inline else "attachment")
 
 
@@ -181,7 +181,7 @@ def document_info(document_id: int, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(404, "Dokument nicht gefunden")
     return {"id": doc.id, "file_name": doc.file_name, "page_count": doc.page_count, "type": doc.document_type,
-            "has_text": doc.has_text, "exists": os.path.isfile(doc.file_path)}
+            "has_text": doc.has_text, "exists": os.path.isfile(fs_path(doc.file_path))}
 
 
 # --- Optionale KI-Auswertung (mit ausdrücklicher Bestätigung) ---

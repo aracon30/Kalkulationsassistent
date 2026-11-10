@@ -14,7 +14,26 @@ from pathlib import Path
 
 from app.models import ClassStatus, DocType
 from app.services.excel_reader import normalize_label, peek_workbook
-from app.services.folder_scanner import KNOWN_UNSUPPORTED, SUPPORTED_EXTENSIONS
+from app.services.folder_scanner import KNOWN_UNSUPPORTED, SUPPORTED_EXTENSIONS, fs_path
+
+# Bei inhaltlichen Änderungen der Regeln erhöhen: unveränderte, noch nicht importierte Dateien
+# werden beim nächsten Scan neu klassifiziert.
+CLASSIFIER_VERSION = 2
+
+# Ordnernamen (ohne führende Nummerierung wie "03 ") -> (Dokumenttyp, Punkte, nur für Endungen)
+FOLDER_RULES: list[tuple[str, str, float, tuple[str, ...]]] = [
+    (r"^kalkulation(en)?$", DocType.KALKULATION, 2, (".xlsx", ".xlsm")),
+    (r"^fertigungszeit(en)?$|^arbeitsplan$", DocType.FERTIGUNGSZEIT, 2, (".xlsx", ".xlsm")),
+    (r"^(massblatt|maßblatt|masszeichnung|zeichnung(en)?|angebotszeichnung(en)?)$", DocType.ZEICHNUNG, 2, (".pdf",)),
+    (r"^angebot(e)?$", DocType.KUNDENANGEBOT, 1, (".pdf",)),
+    (r"^(lieferanten?(angebote)?|zukauf|anfragen lieferanten?)$", DocType.LIEFERANTENANGEBOT, 2, (".pdf", ".xlsx")),
+    (r"^st(ue|ü)ckliste(n)?$", DocType.STUECKLISTE, 2, (".pdf", ".xlsx", ".xlsm")),
+]
+
+
+def _folder_key(name: str) -> str:
+    return normalize_label(re.sub(r"^\d+[\s_.-]*", "", name))
+
 
 DRAWING_NAME_RE = re.compile(r"^(?P<prefix>[A-Z]{1,4})-\d+-\d+(?:\.\d+)*-\d{2,4}", re.IGNORECASE)
 PRODUCT_PREFIXES = {"KF": "Kerzenfilter", "BF": "Beutelfilter"}
@@ -58,7 +77,7 @@ def _count(labels: list[str], words: list[str]) -> int:
 def read_pdf_basics(path: str | Path, max_pages: int = 3) -> tuple[int, str, dict, tuple[float, float] | None]:
     import pymupdf
 
-    with pymupdf.open(str(path)) as doc:
+    with pymupdf.open(fs_path(path)) as doc:
         if doc.needs_pass:
             raise ValueError("PDF ist passwortgeschützt")
         text = "\n".join(doc[i].get_text("text") for i in range(min(max_pages, doc.page_count)))
@@ -86,6 +105,20 @@ def classify_file(path: str | Path, read_content: bool = True) -> Classification
         reason = "Altes Excel-Format (.xls) wird nicht unterstützt" if ext == ".xls" else f"Dateityp '{ext or 'ohne Endung'}' wird nicht ausgewertet"
         status = ClassStatus.NICHT_UNTERSTUETZT
         return Classification(DocType.SONSTIGES, status, 0.0, [reason if ext in KNOWN_UNSUPPORTED or ext == ".xls" else reason])
+
+    # --- Ordnerregeln (nächstgelegener passender Ordner) ---
+    from app.services.offer_numbers import find_offer_numbers, split_path_parts
+
+    folders = split_path_parts(str(p))[:-1]
+    for folder in reversed(folders[-4:]):
+        key = _folder_key(folder)
+        hit = next(((dt, pts) for rx, dt, pts, exts in FOLDER_RULES if ext in exts and re.search(rx, key)), None)
+        if hit:
+            add(hit[0], hit[1], f"Ordner '{folder}'")
+            break
+    # Kundenangebot: PDF, dessen Name nur aus der Angebotsnummer besteht (z. B. AE-13548.26.pdf)
+    if ext == ".pdf" and find_offer_numbers(p.stem) and re.fullmatch(r"[A-Za-z]{2}[-_ ]?\d{5}\.\d{2}([ _-]?(rev|r|v|index)?[ _-]?\w{0,3})?", p.stem, re.IGNORECASE):
+        add(DocType.KUNDENANGEBOT, 2, "PDF-Name entspricht der Angebotsnummer")
 
     # --- Dateinamensregeln ---
     if "fertigungszeit" in stem or "fertigungsstunden" in stem or "arbeitsplan" in stem or "fertigungsplan" in stem:

@@ -30,7 +30,8 @@ def settings_page(request: Request, msg: str | None = None, err: str | None = No
 
 
 @router.post("/einstellungen")
-def save_settings(base_dir: str = Form(""), offer_number_patterns: str = Form(""), max_file_size_mb: int = Form(200)):
+def save_settings(base_dir: str = Form(""), offer_number_patterns: str = Form(""), max_file_size_mb: int = Form(200),
+                  excluded_dir_names: str = Form("")):
     import re
 
     patterns = [p.strip() for p in offer_number_patterns.splitlines() if p.strip()]
@@ -40,7 +41,8 @@ def save_settings(base_dir: str = Form(""), offer_number_patterns: str = Form(""
         except re.error as exc:
             return redirect("/einstellungen", err=f"Ungültiger regulärer Ausdruck '{p}': {exc}")
     update_settings(base_dir=normalize_base_dir(base_dir) or None, offer_number_patterns=patterns or get_settings().offer_number_patterns,
-                    max_file_size_mb=max(1, min(max_file_size_mb, 2000)))
+                    max_file_size_mb=max(1, min(max_file_size_mb, 2000)),
+                    excluded_dir_names=[x.strip() for x in excluded_dir_names.splitlines() if x.strip()])
     return redirect("/einstellungen", msg="Einstellungen gespeichert")
 
 

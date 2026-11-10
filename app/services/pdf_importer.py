@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.services.folder_scanner import fs_path
 from app.services.normalize import normalize_material, normalize_product_type
 
 DRAWING_NO_RE = re.compile(r"\b([A-Z]{1,4}-\d+-\d+(?:\.\d+)*-\d{2,4})\b")
@@ -61,7 +62,7 @@ def _snippet(text: str, start: int, end: int, width: int = 40) -> str:
 def extract_pdf(path: str | Path, max_pages: int = 20) -> PdfExtraction:
     import pymupdf
 
-    with pymupdf.open(str(path)) as doc:
+    with pymupdf.open(fs_path(path)) as doc:
         if doc.needs_pass:
             raise ValueError("PDF ist passwortgeschützt")
         pages = [doc[i].get_text("text") for i in range(min(doc.page_count, max_pages))]
@@ -127,7 +128,7 @@ def render_page_png(path: str | Path, page: int, zoom: float = 1.5) -> bytes:
     import pymupdf
 
     zoom = max(0.25, min(zoom, 4.0))
-    with pymupdf.open(str(path)) as doc:
+    with pymupdf.open(fs_path(path)) as doc:
         if page < 1 or page > doc.page_count:
             raise IndexError("Seite existiert nicht")
         pix = doc[page - 1].get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)

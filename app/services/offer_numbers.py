@@ -10,9 +10,9 @@ from app.config import get_settings
 
 @dataclass(frozen=True)
 class OfferNumberMatch:
-    number: str        # normalisiert, z. B. "SE-13705.26"
+    number: str        # normalisiert, z. B. "AE-13548.26"
     year: int | None   # z. B. 2026
-    source: str        # "dateiname" | "ordner:<name>" | "inhalt"
+    source: str        # "ordner:<name>" | "dateiname" (ggf. mit Hinweis auf abweichende Nummer)
 
 
 def _compile(patterns: list[str] | None) -> list[re.Pattern[str]]:
@@ -21,9 +21,9 @@ def _compile(patterns: list[str] | None) -> list[re.Pattern[str]]:
 
 def normalize_offer_number(match: re.Match[str]) -> tuple[str, int | None]:
     groups = match.groupdict()
-    if "num" in groups and "year" in groups and groups["num"] and groups["year"]:
-        yy = int(groups["year"])
-        return f"SE-{groups['num']}.{groups['year']}", 2000 + yy
+    if groups.get("num") and groups.get("year"):
+        prefix = (groups.get("prefix") or "SE").upper()
+        return f"{prefix}-{groups['num']}.{groups['year']}", 2000 + int(groups["year"])
     text = re.sub(r"\s+", "", match.group(0)).upper().replace("_", "-")
     return text, None
 
@@ -46,18 +46,25 @@ def split_path_parts(path: str) -> list[str]:
 
 
 def detect_offer_number(path: str, patterns: list[str] | None = None) -> OfferNumberMatch | None:
-    """Sucht zuerst im Dateinamen, dann in den Ordnern (vom nächsten zum entferntesten)."""
+    """Ordner vor Dateiname: Der Angebotsordner (z. B. ``AE-13548.26-Kunde``) ist maßgeblich.
+
+    Dateinamen enthalten oft Nummern anderer Angebote (kopierte Vorlagen, Referenzrechnungen),
+    sie werden nur verwendet, wenn kein Ordner eine Nummer trägt.
+    """
     parts = split_path_parts(path)
     if not parts:
         return None
-    file_name = parts[-1]
-    hits = find_offer_numbers(file_name, patterns)
-    if hits:
-        return OfferNumberMatch(hits[0][0], hits[0][1], "dateiname")
+    file_hits = find_offer_numbers(parts[-1], patterns)
     for folder in reversed(parts[:-1]):
         hits = find_offer_numbers(folder, patterns)
         if hits:
-            return OfferNumberMatch(hits[0][0], hits[0][1], f"ordner:{folder}")
+            source = f"ordner:{folder}"
+            other = [n for n, _ in file_hits if n != hits[0][0]]
+            if other:
+                source += f" (Dateiname nennt {other[0]})"
+            return OfferNumberMatch(hits[0][0], hits[0][1], source)
+    if file_hits:
+        return OfferNumberMatch(file_hits[0][0], file_hits[0][1], "dateiname")
     return None
 
 

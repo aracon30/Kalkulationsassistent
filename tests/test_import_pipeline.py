@@ -210,3 +210,58 @@ def test_background_job_runs_scan_and_import(env, offer_base):
         assert s.scalar(select(func.count(ImportJobEntry.id)).where(ImportJobEntry.job_id == j2)) >= 5
     finally:
         s.close()
+
+
+def test_heta_folder_structure_and_ae_numbers(db, env, monkeypatch):
+    """Ordnerstruktur wie auf K:\\ (AE-Nummern, 03 Angebot\\02 Kalkulationen, 01 Maßblatt)."""
+    from app.models import ClassStatus
+    from tests.factory import make_drawing_pdf, make_kalkulation, make_offer_pdf
+    from app.services import folder_scanner
+    base = env / "K"
+    root = base / "AE-13548.26-IYYM" / "01 Vertrieb - Administration" / "03 Angebot"
+    make_kalkulation(root / "02 Kalkulationen" / "Pr209_Kalkulation.xlsx", "AE-13548.26")
+    make_drawing_pdf(root / "01 Maßblatt" / "SKF-3-301.13-003.pdf", dict(POSITIONS[0], drawing="SKF-3-301.13-003"))
+    make_offer_pdf(root / "AE-13548.26.pdf", "AE-13548.26")
+    mail = base / "AE-13548.26-IYYM" / "01 Vertrieb - Administration" / "02 Schriftverkehr" / "Anfrage.msg"
+    mail.parent.mkdir(parents=True); mail.write_bytes(b"x" * 1000)
+    hashed = []
+    real = import_service.sha256_file
+    monkeypatch.setattr(import_service, "sha256_file", lambda p: hashed.append(str(p)) or real(p))
+    summary = scan_and_inventory(db, str(base))
+    assert not [h for h in hashed if h.endswith(".msg")]  # Mails werden nicht gelesen
+    docs = {d.file_name: d for d in db.scalars(select(Document))}
+    assert all(d.detected_offer_number == "AE-13548.26" for d in docs.values())
+    assert docs["Pr209_Kalkulation.xlsx"].document_type == DocType.KALKULATION
+    assert "Ordner '02 Kalkulationen'" in docs["Pr209_Kalkulation.xlsx"].classification_rule
+    assert docs["AE-13548.26.pdf"].document_type == DocType.KUNDENANGEBOT
+    assert docs["SKF-3-301.13-003.pdf"].document_type == DocType.ZEICHNUNG
+    assert docs["Anfrage.msg"].import_status == ImportStatus.NICHT_UNTERSTUETZT and not docs["Anfrage.msg"].content_hashed
+    run_import(db)
+    offer = db.scalars(select(Offer)).one()
+    assert offer.offer_number == "AE-13548.26" and offer.year == 2026 and len(offer.items) == 2
+
+
+def test_same_file_in_two_offers_is_not_a_duplicate(db, env):
+    from tests.factory import make_kalkulation
+    base = env / "K2"
+    a = make_kalkulation(base / "AE-10001.26-A" / "Kalkulation R05.xlsx", "AE-10001.26")
+    (base / "AE-10002.26-B").mkdir()
+    shutil.copy(a, base / "AE-10002.26-B" / "Kalkulation R05.xlsx")
+    shutil.copy(a, base / "AE-10002.26-B" / "Kopie Kalkulation R05.xlsx")
+    scan_and_inventory(db, str(base))
+    docs = db.scalars(select(Document).order_by(Document.file_path)).all()
+    statuses = {(d.detected_offer_number, d.file_name): d.import_status for d in docs}
+    assert statuses[("AE-10001.26", "Kalkulation R05.xlsx")] == ImportStatus.NEU
+    assert statuses[("AE-10002.26", "Kalkulation R05.xlsx")] == ImportStatus.NEU
+    assert statuses[("AE-10002.26", "Kopie Kalkulation R05.xlsx")] == ImportStatus.IGNORIERT
+
+
+def test_rescan_reclassifies_unchanged_files_after_rule_update(db, offer_base):
+    scan_and_inventory(db, str(offer_base))
+    for d in db.scalars(select(Document)):
+        d.classifier_version, d.detected_offer_number, d.import_status = 1, None, ImportStatus.IGNORIERT
+    db.commit()
+    summary = scan_and_inventory(db, str(offer_base))
+    assert summary.reclassified == 6 and summary.new_documents == 0
+    kalk = db.scalars(select(Document).where(Document.file_name.like("%Kalkulation.xlsx"))).one()
+    assert kalk.detected_offer_number == TEST_OFFER and kalk.import_status == ImportStatus.NEU

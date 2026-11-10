@@ -22,6 +22,14 @@ APP_VERSION = "0.1.0"
 HOST = "127.0.0.1"
 PORT = 8000
 
+DEFAULT_OFFER_PATTERNS = [r"(?<![A-Za-z0-9])(?P<prefix>[A-Z]{2})[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"]
+DEFAULT_EXCLUDED_DIRS = ["$RECYCLE.BIN", "System Volume Information", ".git", "*MUSTERORDNER*"]
+# Frühere Standardwerte: wurden sie unverändert in settings.json gespeichert, gelten die neuen Standards.
+_OLD_DEFAULTS = {
+    "offer_number_patterns": [[r"(?<![A-Za-z0-9])SE[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"]],
+    "excluded_dir_names": [["$RECYCLE.BIN", "System Volume Information", ".git"]],
+}
+
 # Felder, die über die Oberfläche geändert und in settings.json gespeichert werden dürfen.
 EDITABLE_FIELDS = {
     "base_dir",
@@ -55,10 +63,10 @@ class Settings(BaseModel):
 
     base_dir: str | None = None
     # Angebotsnummern, z. B. SE-13705.26 (Gruppe "year" = zweistelliges Jahr)
-    offer_number_patterns: list[str] = Field(
-        default_factory=lambda: [r"(?<![A-Za-z0-9])SE[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"]
-    )
-    excluded_dir_names: list[str] = Field(default_factory=lambda: ["$RECYCLE.BIN", "System Volume Information", ".git"])
+    # Angebotsnummern, z. B. AE-13548.26 oder SE-13705.26 (Gruppen: prefix, num, year)
+    offer_number_patterns: list[str] = Field(default_factory=lambda: list(DEFAULT_OFFER_PATTERNS))
+    # Ordnernamen (Platzhalter * erlaubt, ohne Groß-/Kleinschreibung), die beim Scan übersprungen werden
+    excluded_dir_names: list[str] = Field(default_factory=lambda: list(DEFAULT_EXCLUDED_DIRS))
     max_file_size_mb: int = 200
 
     ai_provider: str = "none"
@@ -116,7 +124,7 @@ def load_settings() -> Settings:
     if settings_file.is_file():
         try:
             stored = json.loads(settings_file.read_text(encoding="utf-8"))
-            data.update({k: v for k, v in stored.items() if k in EDITABLE_FIELDS})
+            data.update({k: v for k, v in stored.items() if k in EDITABLE_FIELDS and v not in _OLD_DEFAULTS.get(k, [])})
         except (OSError, ValueError):
             pass  # defekte Einstellungsdatei -> Standardwerte
     if os.environ.get("HETA_DB_PATH"):

@@ -249,6 +249,8 @@ class Document(Base):
     profile_id: Mapped[str | None] = mapped_column(String(64))
     page_count: Mapped[int | None] = mapped_column(Integer)
     has_text: Mapped[bool | None] = mapped_column(Boolean)
+    classifier_version: Mapped[int | None] = mapped_column(Integer)
+    content_hashed: Mapped[bool] = mapped_column(Boolean, default=True)  # False: nicht auswertbarer Typ, nur Metadaten-Kennung
 
     offer: Mapped[Offer | None] = relationship(back_populates="documents")
     offer_item: Mapped[OfferItem | None] = relationship(back_populates="documents")

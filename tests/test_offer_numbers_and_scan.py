@@ -20,12 +20,55 @@ def test_find_offer_numbers(env, text, expected):
     assert (hits[0] if hits else None) == expected
 
 
-def test_detect_offer_number_prefers_filename_then_folder(env):
+def test_detect_offer_number_prefers_folder_then_filename(env):
     m = detect_offer_number(r"\\SERVER\Freigabe\Angebote\2026\SE-13705.26\Zeichnungen\KF-3-301.11-005.pdf")
     assert m.number == "SE-13705.26" and m.year == 2026 and m.source.startswith("ordner:")
-    m = detect_offer_number("/daten/2025/SE-12501.25/SE-12502.25_Kalkulation.xlsx")
+    # Dateiname nennt ein anderes Angebot (kopierte Referenz) -> Ordner gewinnt, Hinweis bleibt erhalten
+    m = detect_offer_number(r"K:\01 HETA\01 ANGEBOTE\01 ab 2026\AE-13548.26-IYYM\03 Angebot\Behältergewicht_AE-13268.25_D323.xlsx")
+    assert m.number == "AE-13548.26" and "AE-13268.25" in m.source
+    m = detect_offer_number("/daten/sonstiges/SE-12502.25_Kalkulation.xlsx")
     assert m.number == "SE-12502.25" and m.source == "dateiname"
     assert detect_offer_number("/daten/sonstiges/liste.xlsx") is None
+
+
+def test_ae_offer_numbers(env):
+    assert find_offer_numbers("AE-13548.26-IYYM") == [("AE-13548.26", 2026)]
+    assert find_offer_numbers("AE-13469.26-Ultimate Technical") == [("AE-13469.26", 2026)]
+    assert find_offer_numbers("Behältergewicht_AE-13268-25_D323") == []  # andere Schreibweise, kein Treffer
+
+
+def test_old_default_pattern_in_settings_is_upgraded(tmp_path, monkeypatch):
+    import json
+    from app import config
+    (tmp_path / "settings.json").write_text(json.dumps({
+        "offer_number_patterns": [r"(?<![A-Za-z0-9])SE[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"],
+        "excluded_dir_names": ["$RECYCLE.BIN", "System Volume Information", ".git"], "base_dir": "K:\\x"}), encoding="utf-8")
+    monkeypatch.setenv("HETA_DATA_DIR", str(tmp_path))
+    config.reset_settings()
+    s = config.get_settings()
+    assert s.offer_number_patterns == config.DEFAULT_OFFER_PATTERNS
+    assert "*MUSTERORDNER*" in s.excluded_dir_names and s.base_dir == "K:\\x"
+    config.reset_settings()
+
+
+def test_fs_path_windows_extended_prefix():
+    from app.services.folder_scanner import fs_path
+    assert fs_path(r"K:\01 HETA\a.pdf", _nt=True) == "\\\\?\\K:\\01 HETA\\a.pdf"
+    assert fs_path(r"\\SERVER\Freigabe\a.pdf", _nt=True) == "\\\\?\\UNC\\SERVER\\Freigabe\\a.pdf"
+    assert fs_path("\\\\?\\K:\\a.pdf", _nt=True) == "\\\\?\\K:\\a.pdf"
+    assert fs_path("/tmp/a.pdf", _nt=False) == "/tmp/a.pdf"
+
+
+def test_musterordner_and_helper_files_skipped(env, tmp_path):
+    base = tmp_path / "b"
+    (base / "01_MUSTERORDNER").mkdir(parents=True)
+    (base / "01_MUSTERORDNER" / "Kalkulation R05.xlsx").write_bytes(b"x")
+    (base / "AE-13548.26-X").mkdir()
+    for n in ("a.pdf", "D5E81A74.tmp", "Pr209_Kalkulation.xlsx - Verknüpfung.lnk"):
+        (base / "AE-13548.26-X" / n).write_bytes(b"x")
+    from app.config import get_settings
+    res = scan_directory(base, get_settings().excluded_dir_names)
+    assert [f.name for f in res.files] == ["a.pdf"]
 
 
 def test_unc_and_windows_paths_are_split_correctly():
