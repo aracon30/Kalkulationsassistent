@@ -82,6 +82,17 @@ def create_app() -> FastAPI:
     for r in (dashboard.router, import_center.router, offers.router, review.router, materials.router, analysis.router, settings_router.router):
         app.include_router(r)
 
+    @app.exception_handler(Exception)
+    async def server_error(request: Request, exc: Exception):
+        logging.getLogger("app.error").exception("Fehler bei %s %s", request.method, request.url.path, exc_info=exc)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "Interner Fehler – Details in logs/app.log"}, status_code=500)
+        return templates.TemplateResponse(request, "error.html", {
+            "title": "Fehler beim Anzeigen der Seite",
+            "message": f"{type(exc).__name__}: {exc}. Die vollständige Fehlermeldung steht in logs\\app.log (Uhrzeit beachten). "
+                       "Bitte diese Meldung an den Support weitergeben.",
+        }, status_code=500)
+
     @app.exception_handler(404)
     async def not_found(request: Request, exc):
         if request.url.path.startswith("/api/"):

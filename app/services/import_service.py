@@ -556,6 +556,8 @@ def _store_material_lines(session: Session, item: OfferItem, calc: Calculation, 
     total = 0.0
     n_total = 0
     for r in rows:
+        if all(_to_float(r.get(k)) is None for k in ("quantity", "unit_price", "cost", "total_cost", "apz_cost")):
+            continue  # reine Textzeile (Hinweis, Zwischenüberschrift) – kein Bauteil
         desc = str(r.get("description") or "").strip()[:255]
         form = str(r["form"]).strip()[:128] if r.get("form") not in (None, "") else None
         dims_raw = str(r["dimensions"]).strip()[:128] if r.get("dimensions") not in (None, "") else None

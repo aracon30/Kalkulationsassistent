@@ -99,7 +99,7 @@
       {% else %}<p class="muted">Keine Kalkulation importiert.</p>{% endif %}
 
       {% if row.mlines %}
-      <details class="mat"><summary><strong>Materialauszug</strong> – {{ row.mlines|length }} Bauteile, Σ {{ row.mlines|sum(attribute='cost')|de_num(2) }} €
+      <details class="mat"><summary><strong>Materialauszug</strong> – {{ row.mlines|length }} Bauteile, Σ {{ row.msum|de_num(2) }} €
         <a class="small" href="/material?q=&kategorie=&ansicht=zeilen">alle Materialpreise →</a></summary>
         <div class="table-wrap"><table class="table compact">
           <tr><th>Benennung</th><th>Kategorie</th><th>Abmaße</th><th>Werkstoff</th><th class="num">Anz.</th><th class="num">Einzelpreis</th><th class="num">Kosten</th><th>Zeile</th></tr>

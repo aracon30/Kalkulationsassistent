@@ -131,3 +131,33 @@ def test_material_page_and_csv(client, env):
     assert r.status_code == 200 and "DN300 PN16" in r.text and "Behältermantel" not in r.text
     r = client.get("/angebote/1")
     assert "Materialauszug" in r.text
+
+
+def test_offer_page_with_text_row_in_material_list(client, env):
+    """Regression: Hinweistext im Materialauszug führte zu Internal Server Error (Summe über None)."""
+    import openpyxl
+    from tests.factory import make_heta_r05_kalkulation
+    from app.services.jobs import manager
+    from app.database import new_session
+    from app.models import MaterialLine
+    p = make_heta_r05_kalkulation(env / "R" / "SE-99908.26-X" / "SE-99908.26_Kalkulation.xlsx", "SE-99908/26")
+    wb = openpyxl.load_workbook(p)
+    wb["KF-300"].insert_rows(6)
+    wb["KF-300"]["B6"] = "Hinweis: Preise netto"
+    wb.save(p)
+    manager.start("scan", str(env / "R"), wait=True)
+    manager.start("import", None, wait=True)
+    r = client.get("/angebote/1")
+    assert r.status_code == 200 and "Materialauszug" in r.text
+    s = new_session()
+    assert not s.query(MaterialLine).filter(MaterialLine.description.like("Hinweis%")).all()
+    s.close()
+
+
+def test_unexpected_error_shows_german_page(env, monkeypatch):
+    from app.main import create_app
+    from app.routers import dashboard
+    monkeypatch.setattr(dashboard, "collect_kpis", lambda db: 1 / 0)
+    with TestClient(create_app(), raise_server_exceptions=False) as c:
+        r = c.get("/")
+    assert r.status_code == 500 and "ZeroDivisionError" in r.text and "app.log" in r.text

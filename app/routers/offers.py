@@ -114,6 +114,7 @@ def offer_detail(offer_id: int, request: Request, doc: int | None = None, db: Se
         issues = list(db.scalars(select(ReviewIssue).where(ReviewIssue.offer_item_id == item.id, ReviewIssue.status == "offen")))
         mlines = list(db.scalars(select(MaterialLine).where(MaterialLine.calculation_id == current.id).order_by(MaterialLine.source_row))) if current else []
         items.append({"item": item, "calc": current, "calcs": calcs, "ops": ops, "issues": issues, "mlines": mlines,
+                      "msum": sum(l.cost for l in mlines if l.cost is not None),
                       "drawings": [d for d in docs if d.offer_item_id == item.id and d.extension == ".pdf"]})
     offer_issues = list(db.scalars(select(ReviewIssue).where(ReviewIssue.offer_id == offer.id, ReviewIssue.offer_item_id.is_(None), ReviewIssue.status == "offen")))
     pdfs = [d for d in docs if d.extension == ".pdf" and d.is_current]
