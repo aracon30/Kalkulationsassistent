@@ -98,6 +98,18 @@
       <p><a class="btn small" href="/simulation?position={{ it.id }}">Simulation mit diesen Werten</a></p>
       {% else %}<p class="muted">Keine Kalkulation importiert.</p>{% endif %}
 
+      {% if row.mlines %}
+      <details class="mat"><summary><strong>Materialauszug</strong> – {{ row.mlines|length }} Bauteile, Σ {{ row.mlines|sum(attribute='cost')|de_num(2) }} €
+        <a class="small" href="/material?q=&kategorie=&ansicht=zeilen">alle Materialpreise →</a></summary>
+        <div class="table-wrap"><table class="table compact">
+          <tr><th>Benennung</th><th>Kategorie</th><th>Abmaße</th><th>Werkstoff</th><th class="num">Anz.</th><th class="num">Einzelpreis</th><th class="num">Kosten</th><th>Zeile</th></tr>
+          {% for l in row.mlines %}<tr><td>{{ l.description }}</td><td class="small">{{ l.category }}</td><td class="nowrap">{{ l.dimensions or '' }}</td><td>{{ l.material or l.material_raw or '' }}</td>
+            <td class="num">{{ l.quantity|de_auto('') }}{% if l.length_m %} × {{ l.length_m|de_auto }} m{% endif %}</td><td class="num nowrap">{{ l.unit_price|de_num(2) }} {{ l.price_unit }}</td>
+            <td class="num">{{ l.cost|de_num(2) }}</td><td class="small">{{ l.source_row }}</td></tr>{% endfor %}
+        </table></div>
+      </details>
+      {% endif %}
+
       <h3>Fertigungszeiten</h3>
       {% if row.ops %}
       <table class="kv">

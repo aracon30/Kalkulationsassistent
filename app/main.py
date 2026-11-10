@@ -17,7 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import APP_ROOT, APP_VERSION, HOST, PORT, get_settings
 from app.database import init_db
-from app.routers import analysis, dashboard, import_center, offers, review, settings_router
+from app.routers import analysis, dashboard, import_center, materials, offers, review, settings_router
 from app.services.jobs import manager
 from app.web import templates
 
@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
     app.add_middleware(LocalOriginMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
     app.mount("/static", StaticFiles(directory=APP_ROOT / "app" / "static"), name="static")
-    for r in (dashboard.router, import_center.router, offers.router, review.router, analysis.router, settings_router.router):
+    for r in (dashboard.router, import_center.router, offers.router, review.router, materials.router, analysis.router, settings_router.router):
         app.include_router(r)
 
     @app.exception_handler(404)

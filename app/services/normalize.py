@@ -1,6 +1,7 @@
 """Vereinheitlichung technischer Bezeichnungen (Werkstoffe, Produkttypen, Temperaturbereiche)."""
 from __future__ import annotations
 
+import math
 import re
 from datetime import date, datetime, timedelta
 
@@ -127,3 +128,111 @@ def parse_date(value) -> date | None:
 
 def is_standard_dn(dn: float | None) -> bool:
     return dn is not None and int(dn) == dn and int(dn) in DN_SERIES
+
+
+# --- Materialauszug: Abmaße, Kategorien, Gewichtsschätzung ---------------------------------------
+
+DENSITY_KG_M3 = {"edelstahl": 7900.0, "stahl": 7850.0}
+
+MATERIAL_CATEGORIES: list[tuple[str, str]] = [
+    # (Muster in Form/Benennung, Kategorie) – Reihenfolge = Priorität
+    (r"filterkerze|filterbeutel|filterkorb|siebkorb|erstbest(ü|ue)ckung", "Filterelement"),
+    (r"dichtung", "Dichtung"),
+    (r"schraube|mutter|bolzen|gewindestange|scheibe", "Verbindungselement"),
+    (r"blindflansch|flansch", "Flansch"),
+    (r"kl(ö|oe)pper|korbbogen|boden", "Boden"),
+    (r"muffe|bogen|t-st(ü|ue)ck|reduzier|kappe|nippel", "Formteil"),
+    (r"rohr", "Rohr"),
+    (r"blech|flachstahl|platte|lasche", "Blech/Flachstahl"),
+    (r"rund(stahl|material)|vollmaterial|welle", "Rundmaterial"),
+    (r"e-teil|kaufteil|zukauf|davit|typenschild", "Kauf-/Einbauteil"),
+]
+
+
+_SPECIFIC = {"Filterelement", "Dichtung", "Verbindungselement"}
+
+
+def material_category(description: str | None, form: str | None) -> str:
+    """Eindeutige Bauteilarten (Filterelement, Dichtung, Schrauben) aus Benennung oder Form zuerst,
+    danach die Form ("Rohr, geschweißt", "V-Flansch"), zuletzt die Benennung."""
+    both = f"{form or ''} {description or ''}".lower()
+    for rx, cat in MATERIAL_CATEGORIES:
+        if cat in _SPECIFIC and re.search(rx, both):
+            return cat
+    for source in ((form or "").lower(), (description or "").lower()):
+        for rx, cat in MATERIAL_CATEGORIES:
+            if source and re.search(rx, source):
+                return cat
+    return "Sonstiges"
+
+
+def _num_de(s: str) -> float | None:
+    try:
+        return float(s.replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_dimensions(text: str | None) -> dict:
+    """Zerlegt Abmaßangaben: 'Ø323,9 x 4,5', 'DN300 PN16', '3190 x 1350 x 8', 'Ø314 x 15', 'M24', 'G1/2"'."""
+    out: dict = {}
+    if not text:
+        return out
+    t = str(text).replace("×", "x").replace("X", "x")
+    m = re.search(r"\bDN\s*(\d+)", t, re.IGNORECASE)
+    if m:
+        out["dn"] = float(m.group(1))
+    m = re.search(r"\bPN\s*(\d+)", t, re.IGNORECASE)
+    if m:
+        out["pn"] = float(m.group(1))
+    m = re.search(r"\b(M\d+|G\s?\d+(?:/\d+)?\"?|R\s?\d+(?:/\d+)?\"?)", t)
+    if m and "dn" not in out:
+        out["thread"] = m.group(1).replace(" ", "")
+    m = re.search(r"[ØøΦ⌀]\s*(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)(?:\s*x\s*(\d+(?:[.,]\d+)?))?", t)
+    if m:
+        out["outer_diameter"] = _num_de(m.group(1))
+        out["second"] = _num_de(m.group(2))  # Wand (Rohr) bzw. Dicke/Länge – Bedeutung abhängig von Kategorie
+        if m.group(3):
+            out["third"] = _num_de(m.group(3))
+        return out
+    m = re.search(r"[ØøΦ⌀]\s*(\d+(?:[.,]\d+)?)", t)
+    if m:
+        out["outer_diameter"] = _num_de(m.group(1))
+        return out
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)", t)
+    if m:
+        out["length"], out["width"], out["thickness"] = (_num_de(g) for g in m.groups())
+        return out
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)", t)
+    if m:
+        out["width"], out["thickness"] = _num_de(m.group(1)), _num_de(m.group(2))
+    return out
+
+
+def _density(material: str | None) -> float | None:
+    if not material:
+        return None
+    if re.match(r"1\.4\d{3}", material) or material.lower() in {"316l", "304", "304l", "316ti", "v4a", "v2a"}:
+        return DENSITY_KG_M3["edelstahl"]
+    if re.match(r"1\.0\d{3}", material) or material.lower().startswith(("p2", "p3", "s2", "s3")):
+        return DENSITY_KG_M3["stahl"]
+    return None
+
+
+def estimate_weight(category: str, dims: dict, material: str | None, length_m: float | None) -> tuple[float | None, str | None]:
+    """Geschätztes Gewicht je Preiseinheit (kg/m bei Rohren mit Länge, sonst kg/Stück). Nur Rohr/Blech."""
+    rho = _density(material)
+    if rho is None:
+        return None, None
+    if category == "Rohr" and dims.get("outer_diameter") and dims.get("second"):
+        d, s = dims["outer_diameter"], dims["second"]
+        if s * 2 >= d:
+            return None, None
+        kg_per_m = math.pi * (d - s) * s * 1e-6 * rho
+        return (kg_per_m, "kg/m") if length_m else (None, None)
+    if category == "Blech/Flachstahl" or category == "Boden":
+        if dims.get("length") and dims.get("width") and dims.get("thickness"):
+            return dims["length"] * dims["width"] * dims["thickness"] * 1e-9 * rho, "kg/Stk"
+        if category == "Blech/Flachstahl" and dims.get("outer_diameter") and dims.get("second"):  # Ronde Ø x t
+            return math.pi / 4 * dims["outer_diameter"] ** 2 * dims["second"] * 1e-9 * rho, "kg/Stk"
+    return None, None

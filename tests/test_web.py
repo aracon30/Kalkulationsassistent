@@ -114,3 +114,20 @@ def test_scan_invalid_dir_shows_error(client, tmp_path):
 def test_backup(client):
     r = client.post("/einstellungen/backup")
     assert r.status_code == 200 and r.content[:15] == b"SQLite format 3"
+
+
+def test_material_page_and_csv(client, env):
+    from tests.factory import make_heta_r05_kalkulation
+    from app.services.jobs import manager
+    folder = env / "M" / "SE-99907.26-X"
+    make_heta_r05_kalkulation(folder / "SE-99907.26_Kalkulation.xlsx", "SE-99907/26")
+    manager.start("scan", str(env / "M"), wait=True)
+    manager.start("import", None, wait=True)
+    r = client.get("/material")
+    assert r.status_code == 200 and "Rohr" in r.text and "Ø323,9 x 4,5" in r.text
+    r = client.get("/material?kategorie=Rohr&ansicht=zeilen")
+    assert "Behältermantel" in r.text and "Behälterflansch" not in r.text
+    r = client.get("/material/export.csv?kategorie=Flansch")
+    assert r.status_code == 200 and "DN300 PN16" in r.text and "Behältermantel" not in r.text
+    r = client.get("/angebote/1")
+    assert "Materialauszug" in r.text

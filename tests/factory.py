@@ -198,10 +198,15 @@ def make_offer_folder(base: Path, offer_number: str = TEST_OFFER, year: str = "2
 R05_POSITIONS = [
     {"pos": 1, "sheet": "KF-300", "title": "Pos. 1 – Kerzenfilter KF-301.11.200 (TEST), DN300", "drawing": "KF-9-301.11-005",
      "mantel": ("Rohr, geschweißt", "Ø323,9 x 4,5", "1.4404"), "elements": ("Filterkerzen 5 µm TEST", 7), "hours": 88, "weight": 250,
-     "material_rows": [("Behältermantel", 409), ("Behälterflansch", 485), ("Filterkerzen 5 µm TEST", 5040)], "chosen": 33750},
+     "material_rows": [("Behältermantel", "Rohr, geschweißt", "Ø323,9 x 4,5", 1, 1.7, "1.4404", 35, 220),
+                       ("Behälterflansch", "V-Flansch", "DN300 PN16", 1, None, "1.4404", 35, 450),
+                       ("Filterkerzen 5 µm TEST", "Erstbestückung", "Ø63 x 1005", 7, None, "316L", 0, 720),
+                       ("Schrauben + Muttern Deckel", "E-Teil +2", "M24", 14, None, "25CrMo4, verzinkt", 35, 8)], "chosen": 33750},
     {"pos": 2, "sheet": "BF-1000", "title": "Pos. 2 – Beutelfilter BF-1001.11.200 (TEST), DN1000", "drawing": "BF-9-1001.11-001",
      "mantel": ("Blech", "3190 x 1350 x 8", "1.4404"), "elements": ("Filterbeutel PTFE TEST", 12), "hours": 156, "weight": 1200,
-     "material_rows": [("Behältermantel", 2100), ("Behälterboden", 900), ("Filterbeutel PTFE TEST", 1440)], "chosen": 59750,
+     "material_rows": [("Behältermantel", "Blech", "3190 x 1350 x 8", 1, None, "1.4404", 35, 2065),
+                       ("Behälterboden", "Klöpper", "Ø1016 x 8", 1, None, "1.4404", 35, 865),
+                       ("Filterbeutel PTFE TEST", "E-Teil", "Ø180 x 810", 12, None, "PTFE", 0, 120)], "chosen": 59750,
      "boden": "Ø1016 x 8"},
 ]
 
@@ -224,16 +229,13 @@ def make_heta_r05_kalkulation(path: Path, offer_slash: str = "SE-99902/26", posi
         ws["B4"] = p["title"]
         r = 5
         mat_total = 0.0
-        rows = list(p["material_rows"]) + [(f"Zusatzteil {i}", 10) for i in range(extra_rows)]
-        for name, cost in rows:
-            ws[f"A{r}"], ws[f"B{r}"], ws[f"O{r}"], ws[f"R{r}"] = r - 4, name, cost, f"=O{r}+Q{r}"
-            c[f"R{r}"] = cost
-            if name == "Behältermantel":
-                ws[f"C{r}"], ws[f"D{r}"], ws[f"H{r}"] = p["mantel"]
-            if name == "Behälterboden" and p.get("boden"):
-                ws[f"D{r}"], ws[f"H{r}"] = p["boden"], "1.4404"
-            if name == p["elements"][0]:
-                ws[f"E{r}"] = p["elements"][1]
+        rows = list(p["material_rows"]) + [(f"Zusatzteil {i}", "Blech", None, 1, None, "1.4404", 0, 10) for i in range(extra_rows)]
+        for name, form, dims, qty, length, mat, apz, unit in rows:
+            cost = (length or 1) * qty * unit + apz
+            ws[f"A{r}"], ws[f"B{r}"], ws[f"C{r}"], ws[f"D{r}"], ws[f"E{r}"] = r - 4, name, form, dims, qty
+            ws[f"F{r}"], ws[f"H{r}"], ws[f"I{r}"], ws[f"J{r}"] = length, mat, apz, unit
+            ws[f"O{r}"], ws[f"R{r}"] = f"=((IF(F{r}=0,1,F{r}))*E{r}*J{r})+I{r}", f"=O{r}+Q{r}"
+            c[f"O{r}"], c[f"R{r}"] = cost, cost
             mat_total += cost
             r += 1
         last = r - 1

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.ai import AIError, DocumentPayload, get_provider
 from app.database import get_db
 from app.models import (
-    AIRequestLog, Calculation, COST_FIELDS, Document, DocType, ExtractionValue, ManufacturingOperation, Offer, OfferItem,
+    AIRequestLog, Calculation, COST_FIELDS, Document, DocType, ExtractionValue, ManufacturingOperation, MaterialLine, Offer, OfferItem,
     ReviewIssue, ValStatus,
 )
 from app.services.folder_scanner import fs_path
@@ -112,7 +112,8 @@ def offer_detail(offer_id: int, request: Request, doc: int | None = None, db: Se
         ops = [op for op in db.scalars(select(ManufacturingOperation).where(ManufacturingOperation.offer_item_id == item.id)
                                        .order_by(ManufacturingOperation.id)) if op.document_id in current_doc_ids]
         issues = list(db.scalars(select(ReviewIssue).where(ReviewIssue.offer_item_id == item.id, ReviewIssue.status == "offen")))
-        items.append({"item": item, "calc": current, "calcs": calcs, "ops": ops, "issues": issues,
+        mlines = list(db.scalars(select(MaterialLine).where(MaterialLine.calculation_id == current.id).order_by(MaterialLine.source_row))) if current else []
+        items.append({"item": item, "calc": current, "calcs": calcs, "ops": ops, "issues": issues, "mlines": mlines,
                       "drawings": [d for d in docs if d.offer_item_id == item.id and d.extension == ".pdf"]})
     offer_issues = list(db.scalars(select(ReviewIssue).where(ReviewIssue.offer_id == offer.id, ReviewIssue.offer_item_id.is_(None), ReviewIssue.status == "offen")))
     pdfs = [d for d in docs if d.extension == ".pdf" and d.is_current]

@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 89 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 91 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -162,3 +162,22 @@ Festlegungen im Profil (Stand 10.11.2026):
 - Info-Hinweise (z. B. „Zeichnung ohne Textebene“, „Vorlagenkopie ignoriert“) bleiben im Prüfcenter
   sichtbar, verhindern aber nicht die Freigabe; nur Warnungen und Fehler halten den Status auf „Prüfbedarf“.
 - Währung der Vorlage R05: EUR (alle Beträge sind dort als € formatiert).
+
+## 8. Materialpreis-Datenbank (0.3.0)
+
+Jede Zeile des Materialauszugs (Vorlage R05) wird als Bauteil gespeichert (Tabelle `material_lines`):
+Benennung, Form, Abmaße, Norm, Werkstoff (Quelle + vereinheitlicht, z. B. 316L → 1.4404), Anzahl,
+Länge, Einzelpreis mit Einheit (€/m bei Länge, sonst €/Stk), APZ-Kosten, Kosten, Fertigungs- und
+Gesamtkosten der Zeile sowie die Quellzeile. Abmaße werden zerlegt (Ø × Wand, DN/PN, L × B × t,
+Gewinde), jede Zeile erhält eine Kategorie (Rohr, Blech/Flachstahl, Flansch, Boden, Formteil,
+Dichtung, Verbindungselement, Filterelement, Kauf-/Einbauteil, Sonstiges – Regeln in
+`app/services/normalize.py`). Für Rohre und Bleche wird ein Gewicht und €/kg **geschätzt**
+(Edelstahl 7,9 / Stahl 7,85 kg/dm³). Prüfung: Summe der Zeilen = Material Gesamtkosten.
+
+Seite „Materialpreise“: Filter (Text, Kategorie, Werkstoff, Ø-Bereich, DN, Jahr), Ansicht
+„Preisspannen“ (Anzahl, min/Median/max, zuletzt gezahlter Preis je Kategorie + Abmaß + Werkstoff)
+oder „Einzelzeilen“, CSV-Export. In der Angebotsansicht je Position aufklappbar.
+
+Getestet an SE-13705.26: 48 Bauteilzeilen, Summen stimmen, keine Prüfhinweise.
+Offen: Bedeutung der Spalte „APZ Kosten“ (vermutlich Abnahmeprüfzeugnis) bestätigen; Einzelpreise
+sind Kalkulationsansätze (Schätz-/Erfahrungswerte), keine Einkaufspreise.

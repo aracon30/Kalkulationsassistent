@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Materialpreise – HETA{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Materialpreise <span class="hint">{{ lines|length }} Bauteilzeilen</span></h1>
+  <a class="btn" href="/material/export.csv?{{ query }}">CSV exportieren</a></div>
+<form class="filters" method="get">
+  <input name="q" value="{{ f.q }}" placeholder="Benennung, Form, Abmaße, Norm">
+  <select name="kategorie"><option value="">Alle Kategorien</option>{% for c in cats %}<option {{ 'selected' if f.kategorie == c }}>{{ c }}</option>{% endfor %}</select>
+  <input name="werkstoff" value="{{ f.werkstoff }}" placeholder="Werkstoff" size="9">
+  <input name="d_min" value="{{ f.d_min }}" placeholder="Ø von [mm]" size="8">
+  <input name="d_max" value="{{ f.d_max }}" placeholder="Ø bis [mm]" size="8">
+  <input name="dn" value="{{ f.dn }}" placeholder="DN" size="5">
+  <select name="jahr"><option value="">Jahr</option>{% for y in years %}<option {{ 'selected' if f.jahr == y|string }}>{{ y }}</option>{% endfor %}</select>
+  <select name="ansicht"><option value="gruppen" {{ 'selected' if f.ansicht == 'gruppen' }}>Preisspannen</option><option value="zeilen" {{ 'selected' if f.ansicht == 'zeilen' }}>Einzelzeilen</option></select>
+  <label class="inline"><input type="checkbox" name="alle_versionen" value="true" {{ 'checked' if f.alle_versionen }}> ältere Kalkulationsversionen</label>
+  <button class="btn" type="submit">Filtern</button> <a class="small" href="/material">zurücksetzen</a>
+</form>
+<p class="hint">Quelle: Materialauszüge der importierten Kalkulationen (Einzelpreis = Spalte „Einzelpreis Ø-Preis (Stck/m)“; €/m, wenn eine Länge angegeben ist).
+  €/kg ist eine <strong>Schätzung</strong> aus Abmaßen und Dichte (Edelstahl 7,9 / Stahl 7,85 kg/dm³), nur für Rohre und Bleche.</p>
+
+{% if f.ansicht == 'gruppen' %}
+<div class="table-wrap">
+<table class="table">
+  <thead><tr><th>Kategorie</th><th>Abmaße</th><th>Werkstoff</th><th class="num">Anzahl</th><th class="num">min</th><th class="num">Median</th><th class="num">max</th><th>Einheit</th>
+    <th class="num">€/kg (gesch.)</th><th>Zuletzt</th><th>Beispiel</th></tr></thead>
+  <tbody>
+  {% for g in groups %}
+    <tr><td>{{ g.category }}</td><td class="nowrap">{{ g.dimensions or '–' }}</td><td>{{ g.material or '–' }}</td><td class="num">{{ g.n }}</td>
+      <td class="num">{{ g.min|de_num(2) }}</td><td class="num"><strong>{{ g.median|de_num(2) }}</strong></td><td class="num">{{ g.max|de_num(2) }}</td><td>{{ g.unit }}</td>
+      <td class="num">{{ g.price_per_kg|de_num(2) }}</td>
+      <td class="nowrap small">{{ g.latest_price|de_num(2) }} · <a href="/angebote/{{ g.latest_offer.id }}">{{ g.latest_offer.offer_number }}</a></td>
+      <td class="small">{{ g.example }}</td></tr>
+  {% else %}<tr><td colspan="11" class="muted">Keine Materialzeilen gefunden. Materialauszüge werden beim Import von Kalkulationen der Vorlage R05 erfasst.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="table-wrap">
+<table class="table compact">
+  <thead><tr><th>Angebot</th><th>Kategorie</th><th>Benennung</th><th>Form</th><th>Abmaße</th><th>Werkstoff</th><th class="num">Anz.</th><th class="num">Länge [m]</th>
+    <th class="num">Einzelpreis</th><th>Einh.</th><th class="num">APZ</th><th class="num">Kosten</th><th class="num">€/kg (gesch.)</th><th>Quelle</th></tr></thead>
+  <tbody>
+  {% for l in lines %}{% set o = l.offer_item.offer %}
+    <tr><td class="nowrap"><a href="/angebote/{{ o.id }}">{{ o.offer_number }}</a> · {{ l.offer_item.position_number }}</td><td>{{ l.category }}</td><td>{{ l.description }}</td>
+      <td>{{ l.form or '' }}</td><td class="nowrap">{{ l.dimensions or '' }}</td><td>{{ l.material or l.material_raw or '' }}</td><td class="num">{{ l.quantity|de_auto('') }}</td>
+      <td class="num">{{ l.length_m|de_auto('') }}</td><td class="num">{{ l.unit_price|de_num(2) }}</td><td>{{ l.price_unit }}</td><td class="num">{{ l.apz_cost|de_num(2, '') }}</td>
+      <td class="num">{{ l.cost|de_num(2) }}</td><td class="num">{{ l.price_per_kg|de_num(2, '') }}</td>
+      <td class="small nowrap">{{ l.source_sheet }}, Z. {{ l.source_row }}</td></tr>
+  {% else %}<tr><td colspan="14" class="muted">Keine Materialzeilen gefunden.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

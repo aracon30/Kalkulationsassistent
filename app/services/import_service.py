@@ -332,7 +332,8 @@ def _issue(session: Session, code: str, message: str, severity: str = "warnung",
 
 def _clear_document_data(session: Session, doc: Document) -> None:
     """Für erneuten (erzwungenen) Import: abgeleitete Daten dieses Dokuments entfernen."""
-    for model in (ExtractionValue, ManufacturingOperation, Calculation):
+    from app.models import MaterialLine
+    for model in (ExtractionValue, MaterialLine, ManufacturingOperation, Calculation):
         for row in session.scalars(select(model).where(model.document_id == doc.id)):
             session.delete(row)
     for row in session.scalars(select(ReviewIssue).where(ReviewIssue.document_id == doc.id, ReviewIssue.status == "offen")):
@@ -355,6 +356,12 @@ def _reset_offer(session: Session, offer: Offer) -> None:
         session.delete(row)
     for d in session.scalars(select(Document).where(Document.offer_id == offer.id)):
         d.offer_item_id = None
+    from app.models import MaterialLine
+    item_ids = list(session.scalars(select(OfferItem.id).where(OfferItem.offer_id == offer.id)))
+    if item_ids:
+        for row in session.scalars(select(MaterialLine).where(MaterialLine.offer_item_id.in_(item_ids))):
+            session.delete(row)
+        session.flush()
     for item in session.scalars(select(OfferItem).where(OfferItem.offer_id == offer.id)).all():
         session.delete(item)  # mit Kalkulationen und Arbeitsgängen
     for f in OFFER_FIELDS:
@@ -516,6 +523,8 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
                 ev = _store_value(session, doc, e, profile_validated=ex.profile_validated, item=item, calc=calc, target="calculation")
                 if e.value is not None:
                     setattr(calc, name, e.value)
+        if calc is not None and ex.material_lines.get(pos):
+            _store_material_lines(session, item, calc, doc, ex.material_lines[pos])
         if calc is not None:
             for target, source in ex.fallbacks.items():
                 src = fields.get(source)
@@ -533,6 +542,62 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
         if ops:
             _store_operations(session, offer, item, doc, ops, ex.profile_validated)
     return notes
+
+
+def _to_float(v) -> float | None:
+    from app.services.excel_reader import parse_number
+    return parse_number(v)
+
+
+def _store_material_lines(session: Session, item: OfferItem, calc: Calculation, doc: Document, rows: list[dict]) -> None:
+    from app.models import MaterialLine
+    from app.services.normalize import estimate_weight, material_category, normalize_material, parse_dimensions
+
+    total = 0.0
+    n_total = 0
+    for r in rows:
+        desc = str(r.get("description") or "").strip()[:255]
+        form = str(r["form"]).strip()[:128] if r.get("form") not in (None, "") else None
+        dims_raw = str(r["dimensions"]).strip()[:128] if r.get("dimensions") not in (None, "") else None
+        mat_raw = str(r["material"]).strip()[:128] if r.get("material") not in (None, "") else None
+        mat_norm, _ = normalize_material(mat_raw)
+        category = material_category(desc, form)
+        dims = parse_dimensions(dims_raw)
+        length = _to_float(r.get("length"))
+        length = length if length else None
+        # "Länge" ist in der Vorlage ein Multiplikator (Preis × Länge): €/m bei Rohr/Rundmaterial oder Länge ≠ 1,
+        # eine 1 bei Blechen/Teilen ist neutral -> Preis je Stück
+        if length == 1 and category not in ("Rohr", "Rundmaterial"):
+            length = None
+        unit_price = _to_float(r.get("unit_price"))
+        wall = dims.get("second") if category in ("Rohr", "Blech/Flachstahl", "Boden") else None
+        if category == "Blech/Flachstahl" and dims.get("thickness"):
+            wall = dims["thickness"]
+        w, w_unit = estimate_weight(category, dims, mat_norm, length)
+        line_total = _to_float(r.get("total_cost"))
+        if line_total is not None:
+            total += line_total
+            n_total += 1
+        session.add(MaterialLine(
+            calculation_id=calc.id, offer_item_id=item.id, document_id=doc.id, source_sheet=r["_sheet"], source_row=r["_row"],
+            line_no=None if r.get("line_no") is None else str(r["line_no"])[:16], description=desc or None, form=form,
+            dimensions=dims_raw, standard=None if r.get("standard") in (None, "") else str(r["standard"])[:128],
+            material_raw=mat_raw, material=mat_norm, category=category, quantity=_to_float(r.get("quantity")),
+            length_m=length, unit_price=unit_price, price_unit="€/m" if length else "€/Stk",
+            apz_cost=_to_float(r.get("apz_cost")), cost=_to_float(r.get("cost")),
+            manufacturing_cost=_to_float(r.get("manufacturing_cost")), total_cost=line_total,
+            dn=dims.get("dn"), pn=dims.get("pn"), outer_diameter=dims.get("outer_diameter"), wall_thickness=wall,
+            plate_length=dims.get("length"), plate_width=dims.get("width"), thread=dims.get("thread"),
+            est_weight=w, est_weight_unit=w_unit, price_per_kg=(unit_price / w) if (unit_price and w) else None,
+        ))
+        if r.get("_missing_cache"):
+            _issue(session, "formel_ohne_cache", f"{doc.file_name}: Materialauszug Zeile {r['_row']} ({desc}): Formel ohne gespeicherten Wert ({', '.join(r['_missing_cache'])})",
+                   "warnung", item=item, document=doc)
+    session.flush()
+    expected = calc.material_cost * (item.quantity or 1) if calc.material_cost is not None else None
+    if expected is not None and n_total and abs(total - expected) > max(1.0, 0.01 * expected):
+        _issue(session, "summe_abweichend", f"Pos. {item.position_number}: Summe Materialauszug {total:,.2f} € ≠ Material Gesamtkosten {expected:,.2f} € ({doc.file_name})",
+               "warnung", item=item, document=doc)
 
 
 def _check_calculation(session: Session, item: OfferItem, calc: Calculation, doc: Document) -> None:

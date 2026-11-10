@@ -45,6 +45,15 @@ class FieldSpec(BaseModel):
     occurrence: Literal["best", "first", "last"] = "best"  # bei mehreren Fundstellen
 
 
+class MaterialTable(BaseModel):
+    """Materialauszug: Kopfzeile mit Spaltenbeschriftungen, darunter je Bauteil eine Zeile."""
+    header_label: str = "Benennung"                  # Spaltenkopf, an dem die Kopfzeile erkannt wird
+    columns: dict[str, list[str]] = Field(default_factory=dict)  # Feld -> mögliche Spaltenköpfe
+    stop_labels: list[str] = Field(default_factory=list)          # Ende der Tabelle (z. B. "Material Gesamtkosten")
+    skip_regex: str | None = None                    # Zeilen überspringen (z. B. Positionstitel)
+    max_rows: int = 200
+
+
 class OperationsTable(BaseModel):
     """Arbeitsgänge als frei benannte Tabellenzeilen (jede Zeile wird ein Arbeitsgang)."""
     header_label: str                    # Spaltenkopf der Arbeitsgang-Bezeichnungen, z. B. "Arbeitsgang"
@@ -84,6 +93,7 @@ class ImportProfile(BaseModel):
     calculation_fields: dict[str, FieldSpec] = Field(default_factory=dict)
     operations: dict[str, FieldSpec] = Field(default_factory=dict)
     operations_table: OperationsTable | None = None
+    material_table: MaterialTable | None = None
     calculation_fallbacks: dict[str, str] = Field(default_factory=dict)  # Zielfeld -> Ersatzfeld
     header_constants: dict[str, str] = Field(default_factory=dict)       # feste Kopfwerte der Vorlage, z. B. currency: EUR
     source_file: str | None = None
@@ -233,6 +243,7 @@ class WorkbookExtraction:
     application: str | None = None
     fallbacks: dict[str, str] = field(default_factory=dict)
     constants: dict[str, str] = field(default_factory=dict)
+    material_lines: dict[int, list[dict]] = field(default_factory=dict)
 
 
 @dataclass
@@ -527,6 +538,51 @@ class Extractor:
                     best = (sheet, row, cols)
         return best
 
+    def _material_table(self, table: MaterialTable, sheet: str) -> list[dict]:
+        """Liest den Materialauszug eines Positionsblatts. Jede Zeile: Werte + Quellzeile; leere Zeilen werden übersprungen."""
+        head = normalize_label(table.header_label)
+        start = next(((r, c) for r, c, _, n in self._text_cache.get(sheet, []) if n == head), None)
+        if not start:
+            return []
+        header_row = start[0]
+        colmap: dict[str, int] = {}
+        header_cells = [(c, n) for r, c, _, n in self._text_cache[sheet] if r == header_row]
+        for fname, labels in table.columns.items():
+            norms = [normalize_label(l) for l in labels]
+            hit = next((c for c, n in header_cells if any(_label_matches(n, l, "prefix") for l in norms)), None)
+            if hit:
+                colmap[fname] = hit
+        if "description" not in colmap:
+            return []
+        stops = [normalize_label(x) for x in table.stop_labels]
+        skip = re.compile(table.skip_regex) if table.skip_regex else None
+        rows: list[dict] = []
+        empty = 0
+        for r in range(header_row + 1, header_row + 1 + table.max_rows):
+            desc_cell = self.wb.cell_rc(sheet, r, colmap["description"])
+            desc = desc_cell.raw if isinstance(desc_cell.raw, str) else None
+            texts = [n for rr, _, _, n in self._text_cache[sheet] if rr == r]
+            if any(_label_matches(n, st, "prefix") for n in texts for st in stops):
+                break
+            if not desc or not desc.strip():
+                empty += 1
+                if empty >= 5:
+                    break
+                continue
+            empty = 0
+            if skip and skip.search(desc):
+                continue
+            rec: dict = {"_row": r, "_sheet": sheet, "_formulas": {}}
+            for fname, col in colmap.items():
+                info = self.wb.cell_rc(sheet, r, col)
+                rec[fname] = info.value if info.formula else info.raw
+                if info.formula:
+                    rec["_formulas"][fname] = info.formula
+                    if info.missing_cache:
+                        rec.setdefault("_missing_cache", []).append(f"{info.address}")
+            rows.append(rec)
+        return rows
+
     def _operations_table(self, table: OperationsTable, sheets: list[str], position: int, column: int | None) -> dict[str, Extracted]:
         """Jede Zeile unter dem Spaltenkopf ist ein Arbeitsgang (Name aus der Zeile, Stunden aus der Positionsspalte)."""
         out: dict[str, Extracted] = {}
@@ -607,6 +663,8 @@ class Extractor:
         if mode == "sheet_per_position":
             for num, sheet in sorted(pos_sheets.items()):
                 collect(num, [sheet], None)
+                if prof.material_table is not None:
+                    result.material_lines[num] = self._material_table(prof.material_table, sheet)
         elif mode == "column_per_position":
             assert col_sheet is not None
             for num, col in sorted(pos_cols.items()):

@@ -360,3 +360,31 @@ def test_heta_r05_validated_offer_is_verified_despite_info_hints(db, env):
     assert [i.validation_status for i in offer.items] == [ValStatus.VERIFIZIERT] * 2
     assert all(i.current_calculation.validation_status == ValStatus.VERIFIZIERT for i in offer.items)
     assert offer.validation_status == ValStatus.VERIFIZIERT
+
+
+def test_heta_r05_material_lines(db, env):
+    from app.models import MaterialLine
+    from tests.factory import make_heta_r05_kalkulation
+    folder = env / "K6" / "SE-99906.26-X"
+    make_heta_r05_kalkulation(folder / "SE-99906.26_Kalkulation.xlsx", "SE-99906/26")
+    scan_and_inventory(db, str(env / "K6"))
+    run_import(db)
+    lines = {(l.offer_item.position_number, l.description): l for l in db.scalars(select(MaterialLine))}
+    assert len(lines) == 7  # Positionstitel wird übersprungen
+    mantel = lines[(1, "Behältermantel")]
+    assert (mantel.category, mantel.outer_diameter, mantel.wall_thickness, mantel.material) == ("Rohr", 323.9, 4.5, "1.4404")
+    assert (mantel.unit_price, mantel.price_unit, mantel.length_m, mantel.apz_cost, mantel.cost) == (220, "€/m", 1.7, 35, 409)
+    assert mantel.est_weight_unit == "kg/m" and 6 < mantel.price_per_kg < 7
+    assert (mantel.source_sheet, mantel.source_row) == ("KF-300", 5)
+    flansch = lines[(1, "Behälterflansch")]
+    assert (flansch.category, flansch.dn, flansch.pn, flansch.price_unit) == ("Flansch", 300, 16, "€/Stk")
+    assert lines[(1, "Schrauben + Muttern Deckel")].category == "Verbindungselement"
+    assert lines[(1, "Schrauben + Muttern Deckel")].thread == "M24"
+    blech = lines[(2, "Behältermantel")]
+    assert (blech.category, blech.plate_length, blech.plate_width, blech.wall_thickness) == ("Blech/Flachstahl", 3190, 1350, 8)
+    assert 260 < blech.est_weight < 285 and blech.est_weight_unit == "kg/Stk"
+    assert lines[(2, "Filterbeutel PTFE TEST")].category == "Filterelement"
+    assert not db.scalars(select(ReviewIssue).where(ReviewIssue.code == "summe_abweichend")).all()
+    # Neuimport ersetzt die Zeilen (keine Dubletten)
+    run_import(db, force=True)
+    assert db.scalar(select(func.count(MaterialLine.id))) == 7

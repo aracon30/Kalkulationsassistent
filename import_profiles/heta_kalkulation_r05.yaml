@@ -78,6 +78,26 @@ calculation_fields:
   offer_price: {labels: [gewählt], value_column: O, type: number, unit: EUR}
   calculation_date: {labels: [Datum], inline: true, type: date}
 
+# Materialauszug je Positionsblatt (Spalten werden über die Kopfzeile erkannt)
+material_table:
+  header_label: Benennung
+  columns:
+    line_no: [Pos.]
+    description: [Benennung]
+    form: [Form]
+    dimensions: [Abmaße]
+    quantity: [Anzahl]
+    length: [Länge]
+    standard: [Norm]
+    material: [Material]
+    apz_cost: [APZ Kosten]
+    unit_price: [Einzelpreis]
+    cost: [Kosten]
+    manufacturing_cost: [Fertigungskosten]
+    total_cost: [Gesamtkosten]
+  stop_labels: [Material Gesamtkosten]
+  skip_regex: '^\s*Pos\.\s*\d+\s*[–—-]'   # Positionstitel
+
 # Feste Angaben der Vorlage: alle Beträge sind in der Vorlage als € formatiert
 header_constants:
   currency: EUR

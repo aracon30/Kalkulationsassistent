@@ -391,3 +391,46 @@ class AIRequestLog(Base):
     error: Mapped[str | None] = mapped_column(Text)
     cost_estimate: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class MaterialLine(Base):
+    """Eine Zeile des Materialauszugs einer Kalkulation (Bauteil mit Abmaßen, Werkstoff und Preis)."""
+    __tablename__ = "material_lines"
+    __table_args__ = (Index("ix_material_lines_lookup", "category", "material", "outer_diameter", "dn"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    calculation_id: Mapped[int] = mapped_column(ForeignKey("calculations.id", ondelete="CASCADE"), index=True)
+    offer_item_id: Mapped[int] = mapped_column(ForeignKey("offer_items.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    source_sheet: Mapped[str | None] = mapped_column(String(128))
+    source_row: Mapped[int | None] = mapped_column(Integer)
+    line_no: Mapped[str | None] = mapped_column(String(16))
+    description: Mapped[str | None] = mapped_column(String(255), index=True)
+    form: Mapped[str | None] = mapped_column(String(128))
+    dimensions: Mapped[str | None] = mapped_column(String(128))       # wie in der Quelle
+    standard: Mapped[str | None] = mapped_column(String(128))
+    material_raw: Mapped[str | None] = mapped_column(String(128))
+    material: Mapped[str | None] = mapped_column(String(64), index=True)  # normalisiert
+    category: Mapped[str | None] = mapped_column(String(64), index=True)
+    quantity: Mapped[float | None] = mapped_column(Float)              # Anzahl lt. Auszug (alle Gehäuse)
+    length_m: Mapped[float | None] = mapped_column(Float)              # Länge je Stück in m (Preisbasis €/m)
+    unit_price: Mapped[float | None] = mapped_column(Float)            # Einzelpreis (€/Stk bzw. €/m)
+    price_unit: Mapped[str | None] = mapped_column(String(16))         # "€/Stk" | "€/m"
+    apz_cost: Mapped[float | None] = mapped_column(Float)              # Spalte "APZ Kosten"
+    cost: Mapped[float | None] = mapped_column(Float)                  # Materialkosten der Zeile
+    manufacturing_cost: Mapped[float | None] = mapped_column(Float)    # Fertigungskosten der Zeile
+    total_cost: Mapped[float | None] = mapped_column(Float)            # Gesamtkosten der Zeile
+    dn: Mapped[float | None] = mapped_column(Float)
+    pn: Mapped[float | None] = mapped_column(Float)
+    outer_diameter: Mapped[float | None] = mapped_column(Float)        # mm
+    wall_thickness: Mapped[float | None] = mapped_column(Float)        # mm (Rohr) bzw. Dicke (Ronde/Blech)
+    plate_length: Mapped[float | None] = mapped_column(Float)          # mm
+    plate_width: Mapped[float | None] = mapped_column(Float)           # mm
+    thread: Mapped[str | None] = mapped_column(String(32))
+    est_weight: Mapped[float | None] = mapped_column(Float)            # geschätzt, je Preiseinheit
+    est_weight_unit: Mapped[str | None] = mapped_column(String(16))    # "kg/m" | "kg/Stk"
+    price_per_kg: Mapped[float | None] = mapped_column(Float)          # geschätzt: unit_price / est_weight
+
+    calculation: Mapped[Calculation] = relationship()
+    offer_item: Mapped[OfferItem] = relationship()
+    document: Mapped[Document | None] = relationship()
