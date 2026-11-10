@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 96 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` →  bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -219,3 +219,19 @@ Pauschalen für Verpackung, Versand, Zertifikate; Positionen ohne EK bleiben „
 Preisen in Handelsware und Materialauszügen mit „übernehmen“. Speichern, Status, Druckansicht.
 
 Weitere Änderungen: Kategorie „Armatur“; „Siebkorbhalterung“/„Korbaufnahme“ nicht mehr als Filterelement.
+
+## 11. Ersatzteil-Preistabellen und unbekannte Vorlagen (0.6.0)
+
+Befund nach dem Import von „01 ab 2025“: 212 von ~635 Kalkulationsdateien passten nicht zur Vorlage R05.
+Stichprobe (DE-13212.25-R00, DE-13457.25, DE-13704.26): keine Apparatekalkulationen, sondern
+**Preistabellen für Ersatzteile/Handelsware** („Tabelle1“: Bezeichnung, Abmessung, Stückzahl, EK, Faktor,
+VK, Lieferzeit … in wechselnder Spaltenfolge). Die leere Vorlage R06_01-2026 wird vom R05-Profil erkannt.
+
+- Neues Profil `handelsware_tabelle`: Spalten werden über die Kopfzeile erkannt (Priorität der
+  Beschriftungen, exakt vor Präfix, jede Spalte einmal – z. B. „EK / Stück“ vor „EK“, „VK3“ vor „VK“).
+  Zeilen landen in der Handelswaren-Datenbank (inkl. Abmessung, Material, Lieferzeit, Zeichnung/StüLi,
+  früherer Auftrag). Über mehrere Zeilen verbundene VK-Zellen = Baugruppenpreis → eigene Summenzeile
+  „Baugruppe: …“ (EK = Summe der Einzelteile). Summen-/Erlöszeilen werden nicht als Artikel übernommen.
+- Dateien, aus denen das allgemeine Ersatzprofil keinen einzigen Kalkulationswert liest, werden nicht mehr
+  als Schein-Positionen angelegt, sondern „ignoriert“ mit Prüfhinweis `vorlage_unbekannt`.
+- Migration 0007 (zusätzliche Spalten in `trade_items`). Geprüft an den drei Originaldateien.

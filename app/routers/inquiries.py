@@ -243,8 +243,9 @@ def trade_search(q: str = "", d_min: str = "", d_max: str = "", db: Session = De
     if not tokens and not d_min and not d_max:
         return {"trade": [], "material": []}
     trade = [{"offer_id": t.offer.id, "offer": t.offer.offer_number, "date": t.offer.offer_date.isoformat() if t.offer.offer_date else None,
-              "description": t.description, "qty": t.quantity, "ek": t.purchase_price, "vk": t.sales_price, "factor": t.markup_factor,
-              "note": t.source_note, "estimate": t.is_estimate}
+              "description": " ".join(x for x in (t.description, t.dimensions, t.material) if x), "qty": t.quantity, "ek": t.purchase_price,
+              "vk": t.sales_price, "factor": t.markup_factor, "note": " ".join(x for x in (t.source_note, t.lead_time, ("zuletzt " + t.last_order) if t.last_order else None) if x),
+              "estimate": t.is_estimate}
              for t in db.scalars(trade_query(q, None, d_min, d_max, None).limit(30))]
     stmt = (select(MaterialLine).join(Calculation, MaterialLine.calculation_id == Calculation.id)
             .where(Calculation.is_current.is_(True)))

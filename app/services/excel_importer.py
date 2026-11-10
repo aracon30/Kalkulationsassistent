@@ -554,15 +554,30 @@ class Extractor:
         header_row = start[0]
         colmap: dict[str, int] = {}
         header_cells = [(c, n) for r, c, _, n in self._text_cache[sheet] if r == header_row]
+        used: set[int] = set()
         for fname, labels in table.columns.items():
-            norms = [normalize_label(l) for l in labels]
-            hit = next((c for c, n in header_cells if any(_label_matches(n, l, "prefix") for l in norms)), None)
+            # Priorität: Reihenfolge der Beschriftungen; exakte Treffer vor Präfix; jede Spalte nur einmal
+            hit = None
+            for l in (normalize_label(x) for x in labels):
+                hit = next((c for c, n in header_cells if c not in used and n == l), None) or \
+                      next((c for c, n in header_cells if c not in used and _label_matches(n, l, "prefix")), None)
+                if hit:
+                    break
             if hit:
                 colmap[fname] = hit
+                used.add(hit)
         if "description" not in colmap:
             return []
         stops = [normalize_label(x) for x in table.stop_labels]
         skip = re.compile(table.skip_regex) if table.skip_regex else None
+        ws = self.wb.wb_formula[sheet]
+        multi_row_merged = {}  # (row, col) -> Bereich, für über mehrere Zeilen verbundene Zellen
+        for rng in ws.merged_cells.ranges:
+            if rng.max_row > rng.min_row:
+                for rr in range(rng.min_row, rng.max_row + 1):
+                    for cc in range(rng.min_col, rng.max_col + 1):
+                        multi_row_merged[(rr, cc)] = str(rng)
+        title = next((o for r, c, o, n in self._text_cache[sheet] if r < header_row and len(o.strip()) > 12), None)
         rows: list[dict] = []
         empty = 0
         for r in range(header_row + 1, header_row + 1 + table.max_rows):
@@ -579,8 +594,10 @@ class Extractor:
             empty = 0
             if skip and skip.search(desc):
                 continue
-            rec: dict = {"_row": r, "_sheet": sheet, "_formulas": {}}
+            rec: dict = {"_row": r, "_sheet": sheet, "_formulas": {}, "_merged": {}, "_title": title}
             for fname, col in colmap.items():
+                if (r, col) in multi_row_merged:
+                    rec["_merged"][fname] = multi_row_merged[(r, col)]
                 info = self.wb.cell_rc(sheet, r, col)
                 rec[fname] = info.value if info.formula else info.raw
                 if info.formula:
@@ -689,7 +706,7 @@ class Extractor:
             for sheet in self.wb.sheetnames:
                 if re.search(prof.trade_table.sheet_regex, sheet):
                     result.trade_lines.extend(self._material_table(prof.trade_table, sheet))
-        if not result.positions:
+        if not result.positions and not result.trade_lines:
             result.issues.append(Issue("keine_positionen", "Keine Angebotsposition mit auswertbaren Werten gefunden", "fehler"))
         if self.wb.full_calc_on_load:
             result.issues.append(Issue("neuberechnung_erzwungen", "Arbeitsmappe verlangt Neuberechnung beim Öffnen – gespeicherte Formelergebnisse können veraltet sein", "warnung"))

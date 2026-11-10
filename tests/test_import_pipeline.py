@@ -406,3 +406,50 @@ def test_heta_r05_trade_items_from_options_sheet(db, env):
     assert items["2.1"].is_estimate
     run_import(db, force=True)
     assert db.scalar(select(func.count(TradeItem.id))) == 2
+
+
+def test_trade_tables_from_spare_part_calculations(db, env):
+    from app.models import Document, TradeItem
+    from tests.factory import make_trade_table_assembly, make_trade_table_factor, make_trade_table_simple
+    base = env / "T"
+    make_trade_table_simple(base / "DE-99920.25" / "DE-99920.25-R00_Kalkulation.xlsx")
+    make_trade_table_assembly(base / "DE-99921.25" / "DE-99921.25_Kalkulation.xlsx")
+    make_trade_table_factor(base / "DE-99922.26" / "DE-99922.26___Kalkulation.xlsx")
+    scan_and_inventory(db, str(base))
+    run_import(db)
+    profiles = {d.file_name: d.profile_id for d in db.scalars(select(Document))}
+    assert set(profiles.values()) == {"handelsware_tabelle"}
+    items = {(t.offer.offer_number, t.description): t for t in db.scalars(select(TradeItem))}
+    k = items[("DE-99920.25", "Filterkerze")]
+    assert (k.dimensions, k.purchase_price, k.sales_price, k.outer_diameter) == ("Ø166 x 650", 200, 250, 166)
+    assert k.markup_factor == pytest.approx(1.25)
+    # Baugruppe: Einzelteile mit EK, VK nur in der Summenzeile
+    oring = items[("DE-99921.25", "O-Ring")]
+    assert (oring.quantity, oring.purchase_price, oring.purchase_total, oring.sales_price) == (3, 250, 750, None)
+    assembly = [t for (o, _), t in items.items() if o == "DE-99921.25" and t.is_assembly][0]
+    assert assembly.description == "Baugruppe: Drehgelenk mit Dichtungssatz TYP TEST" and assembly.quantity == 3
+    assert assembly.purchase_total == 3 * (300 + 250 + 20) and assembly.sales_price == round(1710 * 1.3 / 3 + 390)
+    assert ("DE-99921.25", "Gesamt") not in items
+    # Faktor-Tabelle: EK / Stück vor "EK", VK3 vor "VK", Lieferzeit, Material, früherer Auftrag
+    ks = items[("DE-99922.26", "Kantenspaltelement TEST")]
+    assert (ks.purchase_price, ks.sales_price, ks.sales_total, ks.lead_time, ks.drawing_ref) == (1600, 4000, 4000, "12-13 Wochen", "0000-Pos. 53")
+    o = items[("DE-99922.26", "O-Ring TEST")]
+    assert (o.quantity, o.purchase_price, o.sales_price, o.material, o.last_order) == (2, 5, 25, "NBR 70°", "K-00001/24")
+    assert db.scalar(select(func.count(OfferItem.id))) == 0  # keine Schein-Apparatepositionen
+    assert not db.scalars(select(ReviewIssue).where(ReviewIssue.code.in_(["profil_nicht_validiert", "keine_positionen"]))).all()
+
+
+def test_unknown_layout_is_not_imported_as_fake_positions(db, env):
+    import openpyxl
+    from app.models import Document
+    p = env / "U" / "DE-99930.25" / "DE-99930.25_Kalkulation.xlsx"
+    p.parent.mkdir(parents=True)
+    wb = openpyxl.Workbook()
+    wb.active["A1"], wb.active["A2"], wb.active["B2"] = "Notiz", "Typ", "Material"
+    wb.save(p)
+    scan_and_inventory(db, str(env / "U"))
+    run_import(db)
+    doc = db.scalars(select(Document)).one()
+    assert doc.import_status == ImportStatus.IGNORIERT and "nicht erkannt" in doc.import_message
+    assert db.scalar(select(func.count(OfferItem.id))) == 0
+    assert db.scalars(select(ReviewIssue).where(ReviewIssue.code == "vorlage_unbekannt")).first()

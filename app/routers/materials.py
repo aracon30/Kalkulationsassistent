@@ -110,7 +110,8 @@ def trade_query(q: str | None, kategorie: str | None = None, d_min: str | None =
     stmt = select(TradeItem).join(Offer, TradeItem.offer_id == Offer.id).options(selectinload(TradeItem.offer), selectinload(TradeItem.document))
     for token in (q or "").split():
         like = f"%{token}%"
-        stmt = stmt.where(or_(TradeItem.description.ilike(like), TradeItem.source_note.ilike(like)))
+        stmt = stmt.where(or_(TradeItem.description.ilike(like), TradeItem.source_note.ilike(like), TradeItem.dimensions.ilike(like),
+                              TradeItem.material.ilike(like), TradeItem.drawing_ref.ilike(like)))
     if kategorie:
         stmt = stmt.where(TradeItem.category == kategorie)
     lo, hi = parse_number(d_min), parse_number(d_max)
@@ -129,11 +130,12 @@ def trade_csv(q: str | None = None, kategorie: str | None = None, d_min: str | N
     buf = io.StringIO()
     buf.write("\ufeff")
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["Angebot", "Angebotsdatum", "Pos.", "Benennung", "Kategorie", "Menge", "EK je Stk", "EK gesamt", "MGK", "VGK",
+    w.writerow(["Angebot", "Angebotsdatum", "Pos.", "Benennung", "Abmessung", "Material", "Lieferzeit", "Zeichnung/StüLi", "zuletzt", "Kategorie", "Menge", "EK je Stk", "EK gesamt", "MGK", "VGK",
                 "Risiko + Gewinn", "VK gesamt", "VK je Stk", "Faktor VK/EK", "Quelle / Annahme", "Schätzwert", "Datei", "Blatt", "Zeile"])
     num = lambda v: "" if v is None else f"{v:.4f}".rstrip("0").rstrip(".").replace(".", ",")  # noqa: E731
     for t in db.scalars(trade_query(q, kategorie, d_min, d_max, jahr)):
-        w.writerow([t.offer.offer_number, t.offer.offer_date or "", t.line_no or "", t.description, t.category, num(t.quantity),
+        w.writerow([t.offer.offer_number, t.offer.offer_date or "", t.line_no or "", t.description, t.dimensions or "", t.material or "",
+                    t.lead_time or "", t.drawing_ref or "", t.last_order or "", t.category, num(t.quantity),
                     num(t.purchase_price), num(t.purchase_total), num(t.material_overhead), num(t.sales_overhead), num(t.risk_profit),
                     num(t.sales_total), num(t.sales_price), num(t.markup_factor), t.source_note or "", "ja" if t.is_estimate else "",
                     t.document.file_name if t.document else "", t.source_sheet or "", t.source_row or ""])

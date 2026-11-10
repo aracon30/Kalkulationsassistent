@@ -477,6 +477,12 @@ class TradeItem(Base):
     markup_factor: Mapped[float | None] = mapped_column(Float)       # VK / EK
     source_note: Mapped[str | None] = mapped_column(String(500))     # "Quelle / Annahme", z. B. Lieferant + Datum
     is_estimate: Mapped[bool] = mapped_column(Boolean, default=False)
+    dimensions: Mapped[str | None] = mapped_column(String(128))      # Abmessung lt. Quelle
+    material: Mapped[str | None] = mapped_column(String(128))
+    lead_time: Mapped[str | None] = mapped_column(String(64))
+    drawing_ref: Mapped[str | None] = mapped_column(String(128))     # Zeichnung / Stückliste
+    last_order: Mapped[str | None] = mapped_column(String(64))       # "zuletzt" (früherer Auftrag)
+    is_assembly: Mapped[bool] = mapped_column(Boolean, default=False)  # Summenzeile einer Baugruppe
 
     offer: Mapped[Offer] = relationship()
     document: Mapped[Document | None] = relationship()

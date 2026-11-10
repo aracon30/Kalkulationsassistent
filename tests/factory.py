@@ -339,3 +339,75 @@ def make_heta_fertigungszeit(path: Path, offer_slash: str = "SE-99902/26", hours
     set_cached_values(path, {"Fertigungszeit": {f"C{g}": sa, f"D{g}": sb, f"C{g + 1}": sa * 0.15, f"D{g + 1}": sb * 0.15,
                                                 f"C{g + 2}": sa * 1.15, f"D{g + 2}": sb * 1.15}})
     return path
+
+
+# --- Ersatzteil-/Handelswaren-Tabellen (Aufbau wie DE-13212.25 / DE-13457.25 / DE-13704.26, Werte erfunden) ---
+
+def make_trade_table_simple(path: Path, offer_slash: str = "DE-99920/25") -> Path:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tabelle1"
+    ws["B2"], ws["A3"] = offer_slash, offer_slash
+    for col, txt in zip("ABCDEFG", ["Bezeichnung", "Abmessung", "Feinheit", "EK", "VK", "HETA", "Bode"]):
+        ws[f"{col}5"] = txt
+    ws["A6"], ws["B6"], ws["C6"], ws["D6"], ws["E6"], ws["F6"], ws["G6"] = "Filterkerze", "Ø166 x 650", "1 µm", 200, 250, "=D6*1.2", "=F6/0.9"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    set_cached_values(path, {"Tabelle1": {"F6": 240, "G6": 240 / 0.9}})
+    return path
+
+
+def make_trade_table_assembly(path: Path) -> Path:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tabelle1"
+    ws["A3"] = "Drehgelenk mit Dichtungssatz TYP TEST"
+    ws.merge_cells("A3:I3")
+    for col, txt in zip("ABCDEGHI", ["Bezeichnung", "Stückzahl", "Abmessungen", "EK", "EK Gesamt", "Stückpreis", "Fertigung", "VK Stück"]):
+        ws[f"{col}5"] = txt
+    ws["F5"] = 1.3
+    parts = [("Drehgelenk Material", 3, "DN100", 300), ("O-Ring", 3, "Ø 104,14 x 5,33", 250), ("Stützring", 3, "Ø 105/113,8 x 2", 20)]
+    cache = {}
+    for i, (name, qty, dims, ek) in enumerate(parts, start=6):
+        ws[f"A{i}"], ws[f"B{i}"], ws[f"C{i}"], ws[f"D{i}"], ws[f"E{i}"] = name, qty, dims, ek, f"=D{i}*B{i}"
+        cache[f"E{i}"] = ek * qty
+    last = 5 + len(parts)
+    total = sum(p[1] * p[3] for p in parts)
+    ws[f"A{last + 1}"], ws[f"E{last + 1}"] = "Gesamt", f"=SUM(E6:E{last})"
+    cache[f"E{last + 1}"] = total
+    ws["F6"], ws["G6"], ws["H6"], ws["I6"] = f"=E{last + 1}*F5", "=F6/B6", "=6*65", "=ROUND(G6+H6,0)"
+    vk = round(total * 1.3 / 3 + 390)
+    cache.update({"F6": total * 1.3, "G6": total * 1.3 / 3, "H6": 390, "I6": vk})
+    for col in "FGHI":
+        ws.merge_cells(f"{col}6:{col}{last}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    set_cached_values(path, {"Tabelle1": cache})
+    return path
+
+
+def make_trade_table_factor(path: Path, offer_slash: str = "DE-99922/26") -> Path:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tabelle1"
+    ws["A2"] = offer_slash
+    hdr = ["Bezeichnung", "Zeichnung / StüLi", "Stückzahl", "Abmessung", "Material", "zuletzt", "Stückzahl2", "EK", "VK",
+           "EK / Stück", "EK Gesamt", "Faktor", "VK3", "Gesamt", "Lieferzeit"]
+    for i, txt in enumerate(hdr, start=1):
+        ws.cell(row=4, column=i, value=txt)
+    rows = [("Kantenspaltelement TEST", "0000-Pos. 53", 1, "Ø180 x 500, 50 µm", None, None, None, None, None, 1600, 2.5, "12-13 Wochen"),
+            ("O-Ring TEST", "0000-Pos. 3.11", 2, "Ø308 x 6", "NBR 70°", "K-00001/24", 100, None, 24, 5, 5, None)]
+    cache = {}
+    for r, (name, ref, qty, dims, mat, last, qty2, ek_old, vk_old, ek, fac, lt) in enumerate(rows, start=5):
+        for c, v in zip(range(1, 10), [name, ref, qty, dims, mat, last, qty2, ek_old, vk_old]):
+            ws.cell(row=r, column=c, value=v)
+        ws[f"J{r}"], ws[f"K{r}"], ws[f"L{r}"], ws[f"M{r}"], ws[f"N{r}"], ws[f"O{r}"] = ek, f"=J{r}*C{r}", fac, f"=ROUND(J{r}*L{r},0)", f"=M{r}*C{r}", lt
+        cache.update({f"K{r}": ek * qty, f"M{r}": round(ek * fac), f"N{r}": round(ek * fac) * qty})
+    ws["K8"], ws["N8"] = "=SUM(K5:K6)", "=SUM(N5:N6)"
+    cache.update({"K8": sum(r[9] * r[2] for r in rows), "N8": sum(round(r[9] * r[10]) * r[2] for r in rows)})
+    ws["K10"], ws["L10"] = "Erlös", "=N8-K8"
+    cache["L10"] = cache["N8"] - cache["K8"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    set_cached_values(path, {"Tabelle1": cache})
+    return path

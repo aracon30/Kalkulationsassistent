@@ -443,6 +443,17 @@ def _apply_item_value(session: Session, offer: Offer, item: OfferItem, doc: Docu
         setattr(item, field, value)
 
 
+def _nothing_usable(ex: WorkbookExtraction) -> bool:
+    """Unvalidiertes (generisches) Profil ohne einen einzigen Kalkulationswert und ohne Handelsware:
+    Aufbau unbekannt – keine Schein-Positionen anlegen."""
+    if ex.profile_validated or ex.trade_lines:
+        return False
+    for fields in ex.positions.values():
+        if any(e.group == "calculation" and e.value is not None for e in fields.values()):
+            return False
+    return not any(ops for ops in ex.operations.values())
+
+
 def _reset_from_old_versions(session: Session, doc: Document) -> None:
     """Neue Version einer Datei: Werte älterer Versionen derselben Datei werden ersetzt statt als Widerspruch gemeldet."""
     old_ids = list(session.scalars(select(Document.id).where(Document.file_path == doc.file_path, Document.id != doc.id)))
@@ -610,26 +621,60 @@ def _store_trade_items(session: Session, offer: Offer, doc: Document, rows: list
     from app.models import TradeItem
     from app.services.normalize import material_category, parse_dimensions
 
+    txt = lambda v, n: (str(v).strip()[:n] or None) if v not in (None, "") else None  # noqa: E731
+    assembly: dict | None = None
     for r in rows:
         nums = {k: _to_float(r.get(k)) for k in ("quantity", "purchase_price", "purchase_total", "material_overhead",
-                                                 "sales_overhead", "risk_profit", "sales_total")}
-        if all(v is None for v in nums.values()):
+                                                 "sales_overhead", "risk_profit", "sales_total", "sales_price", "factor")}
+        if all(nums[k] is None for k in ("quantity", "purchase_price", "purchase_total", "sales_total", "sales_price")):
             continue
         desc = str(r.get("description") or "").strip()
-        note = str(r["source_note"]).strip()[:500] if r.get("source_note") not in (None, "") else None
+        dims = txt(r.get("dimensions"), 128)
+        note = txt(r.get("source_note"), 500)
         qty = nums["quantity"]
-        ek_total = nums["purchase_total"] if nums["purchase_total"] is not None else (
-            nums["purchase_price"] * qty if (nums["purchase_price"] is not None and qty) else None)
-        vk = nums["sales_total"]
+        ek = nums["purchase_price"]
+        ek_total = nums["purchase_total"] if nums["purchase_total"] is not None else (ek * qty if (ek is not None and qty) else None)
+        if ek is None and ek_total is not None and qty:
+            ek = ek_total / qty
+        merged = r.get("_merged") or {}
+        vk, vk_total = nums["sales_price"], nums["sales_total"]
+        if any(k in merged for k in ("sales_price", "sales_total")):
+            # Verkaufspreis gilt für mehrere Zeilen (Baugruppe): nicht der Einzelzeile zuordnen
+            if assembly is None:
+                assembly = {"vk": vk, "vk_total": vk_total, "qty": qty, "ek_total": 0.0, "row": r["_row"], "sheet": r["_sheet"],
+                            "title": r.get("_title") or desc, "factor": nums["factor"]}
+            vk = vk_total = None
+        if assembly is not None and ek_total is not None:
+            assembly["ek_total"] += ek_total
+        if vk is None and vk_total is not None and qty:
+            vk = vk_total / qty
+        if vk_total is None and vk is not None and qty:
+            vk_total = vk * qty
+        if vk_total is None and ek_total is not None and None not in (nums["material_overhead"], nums["sales_overhead"], nums["risk_profit"]):
+            vk_total = ek_total + nums["material_overhead"] + nums["sales_overhead"] + nums["risk_profit"]
+            vk = vk_total / qty if qty else None
+        factor = (vk / ek) if (vk and ek) else nums["factor"]
         session.add(TradeItem(
             offer_id=offer.id, document_id=doc.id, source_sheet=r["_sheet"], source_row=r["_row"],
-            line_no=None if r.get("line_no") is None else str(r["line_no"])[:16], description=desc[:500] or None,
-            category=material_category(desc, None), outer_diameter=parse_dimensions(desc).get("outer_diameter"),
-            quantity=qty, purchase_price=nums["purchase_price"], purchase_total=ek_total,
+            line_no=txt(r.get("line_no"), 16), description=desc[:500] or None,
+            category=material_category(desc, None), outer_diameter=parse_dimensions(dims or desc).get("outer_diameter"),
+            quantity=qty, purchase_price=ek, purchase_total=ek_total,
             material_overhead=nums["material_overhead"], sales_overhead=nums["sales_overhead"], risk_profit=nums["risk_profit"],
-            sales_total=vk, sales_price=(vk / qty) if (vk is not None and qty) else None,
-            markup_factor=(vk / ek_total) if (vk and ek_total) else None, source_note=note,
+            sales_total=vk_total, sales_price=vk, markup_factor=factor, source_note=note,
             is_estimate=bool(note and re.search(r"(?i)sch(ä|ae)tz|annahme|anfragen", note)),
+            dimensions=dims, material=txt(r.get("material"), 128), lead_time=txt(r.get("lead_time"), 64),
+            drawing_ref=txt(r.get("drawing_ref"), 128), last_order=txt(r.get("last_order"), 64),
+        ))
+    if assembly is not None and (assembly["vk"] is not None or assembly["vk_total"] is not None):
+        qty = assembly["qty"] or 1
+        vk = assembly["vk"] if assembly["vk"] is not None else assembly["vk_total"] / qty
+        ek_unit = assembly["ek_total"] / qty if assembly["ek_total"] else None
+        session.add(TradeItem(
+            offer_id=offer.id, document_id=doc.id, source_sheet=assembly["sheet"], source_row=assembly["row"],
+            description=f"Baugruppe: {assembly['title']}"[:500], category="Baugruppe", quantity=qty,
+            purchase_price=ek_unit, purchase_total=assembly["ek_total"] or None, sales_price=vk, sales_total=vk * qty,
+            markup_factor=(vk / ek_unit) if (vk and ek_unit) else assembly["factor"], is_assembly=True,
+            source_note="Verkaufspreis gilt für die Baugruppe (verbundene Zellen); EK = Summe der Einzelteile",
         ))
     session.flush()
 
@@ -786,6 +831,14 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
             if doc.document_type in (DocType.KALKULATION, DocType.FERTIGUNGSZEIT) and doc.extension in (".xlsx", ".xlsm"):
                 with session.begin_nested():
                     ex = extract_workbook(doc.file_path, profiles, doc.document_type)
+                    if _nothing_usable(ex):
+                        doc.import_status = ImportStatus.IGNORIERT
+                        doc.import_message = f"Vorlage nicht erkannt – keine Kalkulationswerte gefunden (Profil {ex.profile_id})"
+                        doc.profile_id = ex.profile_id
+                        _issue(session, "vorlage_unbekannt", f"{doc.file_name}: Aufbau nicht erkannt – nicht importiert. "
+                               "Bei Bedarf Struktur-Export an den Support (neue Vorlage).", "info", offer=offer, document=doc)
+                        stats["log"].append((doc.id, doc.file_path, "import", "ignoriert", doc.import_message))
+                        continue
                     notes = _import_workbook(session, offer, doc, ex, doc.document_type)
                 if doc.document_type == DocType.KALKULATION:
                     kalk_docs.append(doc)

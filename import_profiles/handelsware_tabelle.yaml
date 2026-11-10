@@ -1,0 +1,40 @@
+# Preiskalkulation für Ersatzteile / Handelsware als einfache Tabelle (z. B. "Tabelle1"):
+#   Bezeichnung | Abmessung | Stückzahl | Material | EK | EK Gesamt | Faktor | VK | Gesamt | Lieferzeit …
+# Aufbau anhand DE-13212.25, DE-13457.25, DE-13704.26. Spalten werden über die Kopfzeile erkannt
+# (Reihenfolge egal, erste passende Beschriftung gewinnt, exakte vor Präfix-Treffern).
+# Jede Zeile wird als Handelsware gespeichert; über mehrere Zeilen verbundene VK-Zellen gelten als
+# Preis einer Baugruppe (eigene Summenzeile).
+profile:
+  id: handelsware_tabelle
+  name: Ersatzteil-/Handelswaren-Tabelle
+  document_type: angebotskalkulation
+  validated: true
+  priority: 10
+
+detection:
+  filename_regex: ['(?i)kalk|preis']
+  sheet_name_regex: ['(?i)^tabelle\d*$']
+  labels_any: [Bezeichnung, EK, EK Gesamt, EK / Stück, VK, VK Stück, Faktor, Stückzahl, Abmessung, Lieferzeit]
+  min_score: 5
+
+positions:
+  mode: single
+
+trade_table:
+  sheet_regex: '.'
+  header_label: Bezeichnung
+  columns:
+    description: [Bezeichnung, Benennung, Artikel]
+    quantity: [Stückzahl, Menge, Anzahl, Stk]
+    dimensions: [Abmessung, Abmessungen, Abmaße, Größe]
+    material: [Material, Werkstoff]
+    purchase_price: [EK / Stück, EK je Stk, EK/Stk, EK Stück, EK]
+    purchase_total: [EK Gesamt]
+    sales_price: [VK Stück, VK3, VK je Stk, VK/Stk, VK]
+    sales_total: [Gesamt, VK Gesamt]
+    factor: [Faktor]
+    lead_time: [Lieferzeit]
+    drawing_ref: [Zeichnung / StüLi, Zeichnung, Stückliste]
+    last_order: [zuletzt]
+    source_note: [Bemerkung, Quelle, Lieferant]
+  stop_labels: [Gesamt, Summe, Erlös]

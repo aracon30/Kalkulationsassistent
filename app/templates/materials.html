@@ -22,14 +22,16 @@
 <p class="hint">Handelsware aus den Blättern „Optionen“ der Kalkulationen: Einkaufspreis, Hebesätze und Verkaufspreis. Suchwörter müssen alle vorkommen (z. B. „kerze 100“).</p>
 <div class="table-wrap">
 <table class="table compact">
-  <thead><tr><th>Angebot</th><th>Datum</th><th>Benennung</th><th>Kategorie</th><th class="num">Menge</th><th class="num">EK/Stk</th><th class="num">VK/Stk</th><th class="num">Faktor</th><th>Quelle / Annahme</th></tr></thead>
+  <thead><tr><th>Angebot</th><th>Datum</th><th>Benennung</th><th>Abmessung</th><th>Material</th><th class="num">Menge</th><th class="num">EK/Stk</th><th class="num">VK/Stk</th><th class="num">Faktor</th><th>Lieferzeit</th><th>Quelle / zuletzt</th></tr></thead>
   <tbody>
   {% for t in trade %}
     <tr><td class="nowrap"><a href="/angebote/{{ t.offer.id }}">{{ t.offer.offer_number }}</a>{% if t.line_no %} · {{ t.line_no }}{% endif %}</td><td class="nowrap">{{ t.offer.offer_date|de_date }}</td>
-      <td>{{ t.description }}</td><td class="small">{{ t.category }}</td><td class="num">{{ t.quantity|de_auto }}</td>
-      <td class="num">{{ t.purchase_price|de_num(2) }}</td><td class="num">{{ t.sales_price|de_num(2) }}</td><td class="num">{{ t.markup_factor|de_num(3) }}</td>
-      <td class="small">{{ t.source_note or '' }}{% if t.is_estimate %} <span class="badge warn">Schätzwert</span>{% endif %}</td></tr>
-  {% else %}<tr><td colspan="9" class="muted">Keine Handelsware gefunden. Sie wird beim Import aus Blättern „Optionen“ übernommen (ggf. „Alle erneut importieren“).</td></tr>{% endfor %}
+      <td>{% if t.is_assembly %}<strong>{{ t.description }}</strong>{% else %}{{ t.description }}{% endif %}<div class="small muted">{{ t.category }}{% if t.drawing_ref %} · {{ t.drawing_ref }}{% endif %}</div></td>
+      <td class="nowrap">{{ t.dimensions or '' }}</td><td>{{ t.material or '' }}</td><td class="num">{{ t.quantity|de_auto }}</td>
+      <td class="num">{{ t.purchase_price|de_num(2) }}</td><td class="num">{{ t.sales_price|de_num(2) }}</td><td class="num">{{ t.markup_factor|de_num(2) }}</td>
+      <td class="small">{{ t.lead_time or '' }}</td>
+      <td class="small">{{ t.source_note or '' }}{% if t.last_order %} zuletzt {{ t.last_order }}{% endif %}{% if t.is_estimate %} <span class="badge warn">Schätzwert</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="11" class="muted">Keine Handelsware gefunden. Sie wird beim Import aus Blättern „Optionen“ übernommen (ggf. „Alle erneut importieren“).</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>
