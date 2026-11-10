@@ -25,7 +25,7 @@ router = APIRouter()
 
 ITEM_DISPLAY = ["product_type", "description", "drawing_number", "dn", "design_pressure", "design_temperature_min",
                 "design_temperature_max", "material", "diameter", "wall_thickness", "height", "volume", "filter_elements",
-                "filter_area", "design_code", "weight"]
+                "filter_area", "design_code", "weight", "quantity"]
 CALC_DISPLAY = [f for f in COST_FIELDS] + ["calculation_date"]
 STATUS_CHOICES = ["offen", "gewonnen", "verloren", "storniert"]
 

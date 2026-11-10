@@ -1,14 +1,40 @@
-# HETA-Fertigungszeitvorlage (2025/2026). STATUS: NICHT VALIDIERT.
-extends: generic_fertigungszeit
+# HETA-Fertigungszeitkalkulation (z. B. SE-13705.26_Fertigungszeit.xlsx).
+# Aufbau anhand der Originaldatei: Blatt "Fertigungszeit", Spaltenkopf "Arbeitsgang", je Position eine
+# Spalte ("Pos. 1 KF DN300 [h]", "Pos. 2 BF DN1000 [h]"), frei benannte Arbeitsgänge bis "Grundzeit je Behälter",
+# danach "+ Verteilzeit (REFA)", "Fertigungszeit je Behälter", "Fertigungszeit gerundet [h]".
+# Der gerundete Wert wird in die Kalkulation übernommen und dort verglichen.
+# STATUS: an einer Originaldatei abgeglichen, fachliche Bestätigung ausstehend.
 profile:
   id: heta_fertigungszeit
-  name: HETA Fertigungszeit 2025/2026
+  name: HETA Fertigungszeit je Behälter
   document_type: fertigungszeitkalkulation
   validated: false
-  priority: 20
+  priority: 30
 
 detection:
-  filename_regex: ['(?i)SE[-_ ]?\d{5}\.\d{2}.*fertigungszeit']
-  sheet_name_regex: ['(?i)fertigung', '(?i)^pos']
-  labels_any: [Zuschnitt, Heften, Schweißen, Schleifen, Montage, Verteilzeit]
-  min_score: 3
+  filename_regex: ['(?i)fertigungszeit']
+  sheet_name_regex: ['(?i)^fertigungszeit$', '(?i)^parameter$']
+  labels_any: [Arbeitsgang, Grundzeit je Behälter, Fertigungszeit je Behälter, Fertigungszeit gerundet]
+  min_score: 5
+
+positions:
+  mode: column_per_position
+  column_header_regex: '(?i)^\s*pos(?:ition)?\.?\s*(\d+)\b'
+  skip_sheet_regex: '(?i)^parameter$|schweißzeit|schweisszeit'
+
+header_fields:
+  offer_number: {find_regex: '\b([A-Z]{2}[-_ ]?\d{5}[./]\d{2})\b', type: text}
+
+item_fields:
+  dn: {find_regex: 'Pos\.\s*{pos}\s+[A-Z]{1,4}\s+DN\s*(\d+)', type: number}
+  drawing_number: {find_regex: '([A-Z]{1,4}-\d+-\d+(?:\.\d+)*-\d{2,4})\s*\(Pos\.\s*{pos}\)', type: text}
+
+operations_table:
+  header_label: Arbeitsgang
+  stop_labels: [Grundzeit je Behälter, Grundzeit]
+
+operations:
+  grundzeit: {name: Grundzeit je Behälter, labels: [Grundzeit je Behälter], match: exact}
+  verteilzeit: {name: Verteilzeit (REFA), labels: [+ Verteilzeit, Verteilzeit]}
+  gesamt: {name: Fertigungszeit je Behälter, labels: [Fertigungszeit je Behälter], match: exact}
+  gesamt_gerundet: {name: Fertigungszeit gerundet, labels: [Fertigungszeit gerundet], match: exact}

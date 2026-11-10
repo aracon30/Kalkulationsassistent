@@ -84,7 +84,7 @@
       <table class="kv">
         {% for f in calc_fields %}
         {% set kind = 'hours' if f.endswith('hours') else ('auto' if f == 'calculation_date' else 'money') %}
-        <tr class="{{ 'sum-row' if f in ['total_cost','offer_price'] }}"><th>{{ FIELD_LABELS[f] }}</th><td class="num">{{ value_cell(c[f]|de_date if f == 'calculation_date' and c[f] else c[f], 'calc:' ~ c.id ~ ':' ~ f, sources, kind) }}</td></tr>
+        <tr class="{{ 'sum-row' if f in ['total_cost','calculated_price','offer_price'] }}"><th>{{ FIELD_LABELS[f] }}</th><td class="num">{{ value_cell(c[f]|de_date if f == 'calculation_date' and c[f] else c[f], 'calc:' ~ c.id ~ ':' ~ f, sources, kind) }}</td></tr>
         {% endfor %}
         <tr><th>Spezifischer Preis</th><td class="num">{% if c.offer_price and it.weight %}{{ (c.offer_price / it.weight)|de_num(2) }} €/kg{% else %}–{% endif %}</td></tr>
         <tr><th>Währung</th><td>{{ c.currency or offer.currency or '–' }}</td></tr>

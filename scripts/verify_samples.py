@@ -69,10 +69,8 @@ def main() -> int:
         for pos, ctrl in CONTROL.items():
             item = next((i for i in offer.items if i.position_number == pos), None)
             calc = item.current_calculation if item else None
-            ops_total = None
-            if item:
-                tot = [o.planned_hours for o in item.operations if o.operation_key == "gesamt"]
-                ops_total = tot[0] if tot else None
+            ops = {o.operation_key: o.planned_hours for o in item.operations} if item else {}
+            ops_total = ops.get("gesamt")
             actual = {
                 "product_type": item.product_type if item else None, "dn": item.dn if item else None,
                 "material": item.material if item else None, "filter_elements": item.filter_elements if item else None,
@@ -80,6 +78,8 @@ def main() -> int:
                 "hours": ops_total if ops_total is not None else (calc.manufacturing_hours if calc else None),
                 "offer_price": calc.offer_price if calc else None,
             }
+            extra = {"Fertigungszeit gerundet (FZ)": ops.get("gesamt_gerundet"), "Fertigungsstunden (Kalkulation)": calc.manufacturing_hours if calc else None,
+                     "Kalkulierter Preis (Formel)": calc.calculated_price if calc else None, "Selbstkosten": calc.total_cost if calc else None}
             for k, exp in ctrl.items():
                 act = actual[k]
                 if act is None:
@@ -89,6 +89,8 @@ def main() -> int:
                 else:
                     verdict = "OK" if str(act).lower() == str(exp).lower() else "ABWEICHUNG"
                 lines.append(f"| {pos} | {k} | {exp} | {act if act is not None else '–'} | {verdict} |")
+            for k, v in extra.items():
+                lines.append(f"| {pos} | {k} | – | {v if v is not None else '–'} | Zusatzinfo |")
         issues = s.scalars(select(ReviewIssue).where(ReviewIssue.offer_id == offer.id, ReviewIssue.status == "offen")).all()
         lines += ["", f"Offene Prüfpunkte: {len(issues)}"] + [f"- [{i.code}] {i.message}" for i in issues[:60]]
     after = {p: sha256_file(p) for p in present}

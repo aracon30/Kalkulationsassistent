@@ -16,10 +16,8 @@ def profiles(env):
 
 
 def test_profiles_load_with_inheritance(profiles):
-    assert {"generic_excel", "generic_fertigungszeit", "heta_2025", "heta_2026", "heta_fertigungszeit"} <= set(profiles)
-    p = profiles["heta_2026"]
-    assert p.calculation_fields["offer_price"].labels[0] == "Angebotspreis"  # geerbt
-    assert p.profile.validated is False
+    assert {"generic_excel", "generic_fertigungszeit", "heta_kalkulation_r05", "heta_fertigungszeit"} <= set(profiles)
+    assert all(p.profile.validated is False for p in profiles.values())
 
 
 def test_profile_errors(tmp_path):
@@ -31,7 +29,7 @@ def test_profile_errors(tmp_path):
 def test_multi_position_workbook(profiles, tmp_path):
     path = make_kalkulation(tmp_path / "SE-99901.26_Kalkulation.xlsx")
     ex = extract_workbook(path, profiles, "angebotskalkulation")
-    assert ex.profile_id == "heta_2026"
+    assert ex.profile_id == "generic_excel"
     assert ex.position_mode == "sheet_per_position"
     assert sorted(ex.positions) == [1, 2]
     assert ex.header["customer"].value == "Testkunde Chemie GmbH"

@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 84 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 85 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -12,7 +12,7 @@ Projektverzeichnis **nicht vorhanden**. Folgen:
 - Der Abgleich mit den Kontrollwerten (Pos. 1: DN 300, 1.4404, 7 Kerzen, 5,74 m², 84 h,
   33.629,33 €; Pos. 2: DN 1000, 1.4404, 12 Beutel, 5,52 m², 145 h, 60.916,66 €) konnte **nicht**
   durchgeführt werden. Es wurden **keine Originalwerte erfunden**.
-- Die Profile `heta_2025`, `heta_2026`, `heta_fertigungszeit` beruhen auf den Begriffen aus dem
+- (Stand 0.1.0) Die Profile `heta_2025`, `heta_2026`, `heta_fertigungszeit` beruhten auf den Begriffen aus dem
   Auftrag, nicht auf den echten Vorlagen. Sie sind als `validated: false` markiert; deshalb erhalten
   importierte Werte derzeit **immer** den Status „Prüfbedarf“.
 - Getestet wurde mit **synthetischen** Dateien (`tests/factory.py`, Angebotsnummer `SE-99901.26`,
@@ -123,3 +123,34 @@ Erkenntnisse aus dem ersten Echtlauf (5.216 Dateien, „K:\01 HETA\01 ANGEBOTE\0
   Leerzeichen/Punkt am Ende).
 - **Neu-Bewertung:** Bei geänderten Erkennungsregeln werden unveränderte, noch nicht importierte Dateien
   beim nächsten Scan neu klassifiziert, ohne sie erneut zu hashen (Datenbankmigration 0002).
+
+## 7. Abgleich mit den Originaldateien SE-13705.26 (0.2.0)
+
+Am 10.11.2026 lagen `SE-13705.26_Kalkulation.xlsx` und `SE-13705.26_Fertigungszeit.xlsx` vor
+(die Zeichnungs-PDFs nicht). Daraus entstanden die Profile `heta_kalkulation_r05` (Vorlage
+„Materialauszug / Kalkulation Behälterbau“, Stand R05_2023-05) und `heta_fertigungszeit`.
+Ergebnis des vollständigen Imports: alle Felder an der richtigen Zelle, keine Fehlzuordnung.
+
+| | Pos. 1 KF DN300 | Pos. 2 BF DN1000 |
+|---|---|---|
+| Material / Elemente / Mantel | 1.4404, 7 Kerzen, Ø323,9 × 4,5 | 1.4404, 12 Beutel, Ø1016 (Boden), 8 mm |
+| Fertigungsstunden Kalkulation (= FZ gerundet) | 88 h | 156 h |
+| Fertigungszeit je Behälter (FZ, ungerundet) | 83,06 h | 144,95 h |
+| Selbstkosten (R über „Risiko + Gewinn“) | 27.890,52 € | 49.475,54 € |
+| Kalkulierter Preis („Summe bei Gesamtabnahme“, FCA) | 33.468,62 € | 59.370,65 € |
+| Angebotspreis („gewählt:“) | 33.750,00 € | 59.750,00 € |
+
+**Abweichungen zu den Kontrollwerten des Auftrags** (33.629,33 € / 84 h bzw. 60.916,66 € / 145 h):
+Kein Wert der Dateien entspricht den Kontrollpreisen; die Kontrollstunden passen nur zu Pos. 2
+(145 h ≈ 144,95 h ungerundet), Pos. 1 liegt bei 83,06 h ungerundet bzw. 88 h gerundet. Die
+Kontrollwerte stammen vermutlich aus einem älteren Dateistand. Filterfläche (5,74 / 5,52 m²) steht in
+keiner der beiden Dateien. Fachlich zu bestätigen: Gilt „gewählt:“ als Angebotspreis?
+
+Festlegungen im Profil (bitte bestätigen):
+- Angebotspreis = „gewählt:“; zusätzlich wird der rechnerische Preis als „Kalkulierter Preis“ gespeichert.
+- Kostenbeträge aus Spalte O (alle Gehäuse der Position), Selbstkosten aus Spalte R (je Stück).
+- Gewicht = „Gewicht in Kg“ aus der Zeile Beizen/Passivieren.
+- Arbeitsgänge werden mit ihrem Originaltext übernommen; zum Vergleich mit der Kalkulation
+  dient „Fertigungszeit gerundet“.
+- Dateien „Kalkulation R0x_…“ ohne Angebotsnummer gelten als Vorlagenkopie und werden ignoriert,
+  wenn das Angebot eine Kalkulation mit Angebotsnummer im Namen hat.

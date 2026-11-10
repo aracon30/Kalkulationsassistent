@@ -133,6 +133,7 @@ class OfferItem(Base):
     filter_elements: Mapped[int | None] = mapped_column(Integer)
     filter_area: Mapped[float | None] = mapped_column(Float)              # m²
     weight: Mapped[float | None] = mapped_column(Float)                   # kg
+    quantity: Mapped[int | None] = mapped_column(Integer)                 # Stückzahl je Position
     design_code: Mapped[str | None] = mapped_column(String(64))
     validation_status: Mapped[str] = mapped_column(String(32), default=ValStatus.PRUEFBEDARF)
 
@@ -153,7 +154,7 @@ COST_FIELDS = [
     "material_cost", "material_overhead", "purchased_parts_cost", "manufacturing_hours",
     "manufacturing_hourly_rate", "manufacturing_cost", "engineering_hours", "engineering_cost",
     "documentation_cost", "inspection_cost", "ndt_tuev_cost", "surface_treatment_cost",
-    "procurement_cost", "sales_overhead", "risk_profit", "total_cost", "offer_price",
+    "procurement_cost", "sales_overhead", "risk_profit", "total_cost", "calculated_price", "offer_price",
 ]
 
 
@@ -185,6 +186,7 @@ class Calculation(Base):
     sales_overhead: Mapped[float | None] = mapped_column(Float)
     risk_profit: Mapped[float | None] = mapped_column(Float)
     total_cost: Mapped[float | None] = mapped_column(Float)
+    calculated_price: Mapped[float | None] = mapped_column(Float)  # rechnerischer Preis laut Formel
     offer_price: Mapped[float | None] = mapped_column(Float)
     currency: Mapped[str | None] = mapped_column(String(8))
     calculation_date: Mapped[date | None] = mapped_column(Date)

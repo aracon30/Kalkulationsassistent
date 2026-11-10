@@ -22,11 +22,12 @@ APP_VERSION = "0.1.0"
 HOST = "127.0.0.1"
 PORT = 8000
 
-DEFAULT_OFFER_PATTERNS = [r"(?<![A-Za-z0-9])(?P<prefix>[A-Z]{2})[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"]
+DEFAULT_OFFER_PATTERNS = [r"(?<![A-Za-z0-9])(?P<prefix>[A-Z]{2})[-_ ]?(?P<num>\d{5})[./](?P<year>\d{2})(?!\d)"]
 DEFAULT_EXCLUDED_DIRS = ["$RECYCLE.BIN", "System Volume Information", ".git", "*MUSTERORDNER*"]
 # Frühere Standardwerte: wurden sie unverändert in settings.json gespeichert, gelten die neuen Standards.
 _OLD_DEFAULTS = {
-    "offer_number_patterns": [[r"(?<![A-Za-z0-9])SE[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"]],
+    "offer_number_patterns": [[r"(?<![A-Za-z0-9])SE[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"],
+                              [r"(?<![A-Za-z0-9])(?P<prefix>[A-Z]{2})[-_ ]?(?P<num>\d{5})\.(?P<year>\d{2})(?!\d)"]],
     "excluded_dir_names": [["$RECYCLE.BIN", "System Volume Information", ".git"]],
 }
 

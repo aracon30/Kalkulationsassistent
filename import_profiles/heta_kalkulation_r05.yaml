@@ -1,0 +1,75 @@
+# HETA-Vorlage "Materialauszug / Kalkulation Behälterbau" (Vorlagenstand R05_2023-05).
+# Aufgebaut anhand der Originaldatei SE-13705.26_Kalkulation.xlsx (Blätter "KF-300", "BF-1000").
+#
+# Aufbau je Apparat ein Tabellenblatt:
+#   Zeile 2       "Kunde: …", "Benennung: …", "Angebot Nr: …", "Zeichnungsnummer: … (Pos. 1) / … (Pos. 2)", "Datum: …"
+#   Zeile 4       Positionstitel "Pos. 1 – Kerzenfilter KF-301.11.200 (…), DN300"
+#   ab Zeile 5    Materialauszug: B Benennung, D Abmaße, E Anzahl, H Material, O Kosten, R Gesamtkosten
+#   danach        feste Zeilen (Beschriftung in Spalte B, Gesamtbetrag in Spalte O, je Stück in Spalte R):
+#                 Material Gesamtkosten, Fertigungskosten Schweißen (E Satz, G Stunden), Konstruktion (F Stunden),
+#                 Dokumentation, Third Party, ZFP + TÜV, Beizen/Passivieren, Lackieren, Hebesätze (F Satz),
+#                 Risiko + Gewinn, Summe bei Gesamtabnahme, "gewählt:" (Angebotspreis)
+# Zeilennummern verschieben sich je nach Länge des Materialauszugs – deshalb Suche über Beschriftungen.
+#
+# STATUS: an einer Originaldatei abgeglichen (2 Positionen). validated bleibt false, bis die
+# Zuordnung (insbesondere: welcher Preis gilt als Angebotspreis) fachlich bestätigt ist.
+profile:
+  id: heta_kalkulation_r05
+  name: HETA Materialauszug / Kalkulation Behälterbau (R05)
+  document_type: angebotskalkulation
+  validated: false
+  priority: 30
+
+detection:
+  filename_regex: ['(?i)kalk']
+  sheet_name_regex: ['(?i)^(KF|BF|SKF|SF|RF)-?\d']
+  labels_any: [Materialauszug / Kalkulation Behälterbau, Material Gesamtkosten, Summe bei Gesamtabnahme, Fertigungskosten Schweißen, Hebesätze]
+  min_score: 3
+
+positions:
+  mode: sheet_per_position
+  sheet_regex: '.'                       # jedes Blatt …
+  sheet_must_contain: [Material Gesamtkosten]   # … mit Materialauszug ist eine Position
+  skip_sheet_regex: '(?i)vergleich|optionen|deckblatt|übersicht|uebersicht|parameter|schweißzeit|schweisszeit'
+
+header_fields:
+  offer_number: {labels: [Angebot Nr, Angebotsnummer], inline: true, type: text}
+  customer: {labels: [Kunde], inline: true, type: text}
+  project_name: {labels: [Benennung], inline: true, type: text}
+  offer_date: {labels: [Datum], inline: true, type: date}
+
+item_fields:
+  position_number: {find_regex: '^\s*Pos\.\s*(\d+)\s*[–—-]', type: integer}
+  product_type: {find_regex: '^\s*Pos\.\s*\d+\s*[–—-]\s*([A-Za-zÄÖÜäöüß-]*filter|[A-Za-zÄÖÜäöüß-]*behälter)', type: text}
+  description: {find_regex: '^\s*Pos\.\s*\d+\s*[–—-]\s*(.+?)\s*$', type: text}
+  dn: {find_regex: '^\s*Pos\.\s*\d+\s*[–—-].*\bDN\s*(\d+)', type: number}
+  drawing_number: {find_regex: '([A-Z]{1,4}-\d+-\d+(?:\.\d+)*-\d{2,4})\s*\(Pos\.\s*{pos}\)', type: text}
+  material: {labels: [Behältermantel], value_column: H, type: text}
+  diameter: {labels: [Behältermantel, Behälterboden], value_column: D, regex: 'Ø\s*([\d.,]+)', type: number, unit: mm}
+  wall_thickness: {labels: [Behältermantel], value_column: D, regex: 'x\s*([\d.,]+)\s*$', type: number, unit: mm}
+  filter_elements: {labels: [Filterkerzen, Filterbeutel, Filterkörbe, Filterelemente, Siebkörbe], value_column: E, type: integer}
+  weight: {labels: [Gewicht in Kg], type: number, unit: kg}     # Gewicht aus der Zeile Beizen/Passivieren
+  quantity: {labels: [Anzahl Gehäuse], type: integer, occurrence: first}
+
+calculation_fields:
+  material_cost: {labels: [Material Gesamtkosten], value_column: O, type: number, unit: EUR}
+  material_overhead: {labels: [Materialgemeinkosten], value_column: O, type: number, unit: EUR}
+  manufacturing_hourly_rate: {labels: [Fertigungskosten Schweißen], value_column: E, type: number, unit: EUR/h}
+  manufacturing_hours: {labels: [Fertigungskosten Schweißen], value_column: G, type: number, unit: h}
+  manufacturing_cost: {labels: [Fertigungskosten Schweißen], value_column: O, type: number, unit: EUR}
+  engineering_hours: {labels: [Konstruktion], match: exact, value_column: F, type: number, unit: h}
+  engineering_cost: {labels: [Konstruktion], match: exact, value_column: O, type: number, unit: EUR}
+  documentation_cost: {labels: [Dokumentation], match: exact, value_column: O, type: number, unit: EUR}
+  inspection_cost: {labels: [Third Party], value_column: O, type: number, unit: EUR}
+  ndt_tuev_cost: {labels: [ZFP + TÜV, ZFP], value_column: O, type: number, unit: EUR}
+  surface_treatment_cost: {labels: [Beizen / Passivieren], value_column: O, type: number, unit: EUR}
+  procurement_cost: {labels: [Beschaffungskosten Externer, Beschaffungskosten], value_column: O, type: number, unit: EUR}
+  sales_overhead: {labels: [Vertriebsgemeinkosten], value_column: O, type: number, unit: EUR}
+  risk_profit: {labels: [Risiko + Gewinn], value_column: O, type: number, unit: EUR}
+  # Selbstkosten: unbeschriftete Summe direkt über "Risiko + Gewinn" in Spalte R (je Stück)
+  total_cost: {labels: [Risiko + Gewinn], value_column: R, row_offset: -1, type: number, unit: EUR}
+  # Rechnerischer Preis: letzte "Summe bei Gesamtabnahme" (FCA inkl. Provision), Spalte O
+  calculated_price: {labels: [Summe bei Gesamtabnahme], value_column: O, occurrence: last, type: number, unit: EUR}
+  # Angebotspreis: manuell "gewählt:" (gerundeter Preis, der ins Kundenangebot geht)
+  offer_price: {labels: [gewählt], value_column: O, type: number, unit: EUR}
+  calculation_date: {labels: [Datum], inline: true, type: date}

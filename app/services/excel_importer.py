@@ -36,6 +36,20 @@ class FieldSpec(BaseModel):
     max_distance: int = 8
     match: Literal["prefix", "exact"] = "prefix"
     name: str | None = None  # Anzeigename (für Arbeitsgänge)
+    # Erweiterungen für feste Vorlagen
+    inline: bool = False                 # "Kunde: Firma" – Wert steht nach dem Doppelpunkt in derselben Zelle
+    value_column: str | None = None      # Wert in dieser Spalte der Beschriftungszeile (z. B. "O")
+    row_offset: int = 0                  # mit value_column: Zeilenversatz zur Beschriftung (z. B. -1)
+    regex: str | None = None             # aus dem gefundenen Wert Gruppe 1 übernehmen; kein Treffer -> nächste Fundstelle
+    find_regex: str | None = None        # statt Beschriftung: Textzelle per Muster suchen, Gruppe 1 = Wert; {pos} = Positionsnummer
+    occurrence: Literal["best", "first", "last"] = "best"  # bei mehreren Fundstellen
+
+
+class OperationsTable(BaseModel):
+    """Arbeitsgänge als frei benannte Tabellenzeilen (jede Zeile wird ein Arbeitsgang)."""
+    header_label: str                    # Spaltenkopf der Arbeitsgang-Bezeichnungen, z. B. "Arbeitsgang"
+    stop_labels: list[str] = Field(default_factory=list)
+    max_rows: int = 80
 
 
 class ProfileMeta(BaseModel):
@@ -58,6 +72,7 @@ class PositionSpec(BaseModel):
     sheet_regex: str = r"(?i)^\s*pos(?:ition)?\.?\s*(\d+)"
     column_header_regex: str = r"(?i)^\s*pos(?:ition)?\.?\s*(\d+)\b"
     skip_sheet_regex: str | None = None
+    sheet_must_contain: list[str] = Field(default_factory=list)  # Positionsblatt nur, wenn diese Beschriftung vorkommt
 
 
 class ImportProfile(BaseModel):
@@ -68,6 +83,7 @@ class ImportProfile(BaseModel):
     item_fields: dict[str, FieldSpec] = Field(default_factory=dict)
     calculation_fields: dict[str, FieldSpec] = Field(default_factory=dict)
     operations: dict[str, FieldSpec] = Field(default_factory=dict)
+    operations_table: OperationsTable | None = None
     source_file: str | None = None
 
     @property
@@ -222,13 +238,15 @@ class _Candidate:
     label_text: str
     unit: str | None
     missing_cache: bool = False
+    override: Any = None          # aus Textzelle herausgelöster Wert (inline/regex/find_regex)
+    order: tuple = ()             # Fundreihenfolge (Blatt, Zeile, Spalte)
 
 
 def _label_matches(norm: str, label_norm: str, mode: str) -> int:
     """0 = keine, 2 = exakt, 1 = Präfix."""
     if norm == label_norm:
         return 2
-    if mode == "prefix" and norm.startswith(label_norm + " "):
+    if mode == "prefix" and norm.startswith(label_norm) and len(norm) > len(label_norm) and not norm[len(label_norm)].isalnum():
         return 1
     return 0
 
@@ -282,7 +300,13 @@ class Extractor:
             for row, _, _, norm in cells:
                 if norm in self._known_labels:
                     per_row[row] = per_row.get(row, 0) + 1
-            self._header_rows[sheet] = {r for r, n in per_row.items() if n >= 3}
+            candidates = {r for r, n in per_row.items() if n >= 3}
+            ws = wb.wb_formula[sheet]
+            # Ein Tabellenkopf enthält keine Zahlen/Formeln (sonst ist es eine Wertezeile mit mehreren Beschriftungen)
+            self._header_rows[sheet] = {r for r in candidates
+                                        if not any(c.value is not None and not isinstance(c.value, str) or
+                                                   (isinstance(c.value, str) and c.value.startswith("="))
+                                                   for c in ws[r])}
 
     def _looks_like_label(self, val) -> bool:
         if not isinstance(val, str):
@@ -327,7 +351,7 @@ class Extractor:
                 return info, unit
         return None, None
 
-    def _find(self, spec: FieldSpec, sheets: list[str], column: int | None = None) -> tuple[list[_Candidate], str]:
+    def _find(self, spec: FieldSpec, sheets: list[str], column: int | None = None, position: int | None = None) -> tuple[list[_Candidate], str]:
         """Sucht Kandidaten; bei ``column`` wird der Wert in dieser Spalte der Beschriftungszeile gelesen."""
         if spec.cell:
             sheet, addr = (spec.cell.split("!", 1) if "!" in spec.cell else (sheets[0] if sheets else self.wb.sheetnames[0], spec.cell))
@@ -336,55 +360,105 @@ class Extractor:
                 return [], "profil_zelle"
             return [_Candidate((3, 0, 0), self.wb.cell(sheet, addr), f"Zelle {addr}", spec.unit)], "profil_zelle"
         out: list[_Candidate] = []
+        if spec.find_regex:
+            rx = re.compile(spec.find_regex.replace("{pos}", str(position if position is not None else r"\d+")), re.IGNORECASE)
+            for s_idx, sheet in enumerate(sheets):
+                if spec.sheet and not re.search(spec.sheet, sheet):
+                    continue
+                for row, col, original, _ in self._text_cache.get(sheet, []):
+                    m = rx.search(original)
+                    if m:
+                        val = (m.group(1) if m.groups() else m.group(0)).strip()
+                        out.append(_Candidate((2, 0, -s_idx), self.wb.cell_rc(sheet, row, col), original, spec.unit,
+                                              override=val, order=(s_idx, row, col)))
+            return out, "profil_muster"
         label_norms = [normalize_label(l) for l in spec.labels]
         for s_idx, sheet in enumerate(sheets):
             if spec.sheet and not re.search(spec.sheet, sheet):
                 continue
             for row, col, original, norm in self._text_cache.get(sheet, []):
                 for prio, ln in enumerate(label_norms):
-                    kind = _label_matches(norm, ln, spec.match)
+                    kind = _label_matches(norm, ln, "prefix" if spec.inline else spec.match)
                     if not kind:
                         continue
-                    if column is not None:
+                    override = None
+                    unit = None
+                    if spec.inline:
+                        if ":" not in original:
+                            continue
+                        override = original.split(":", 1)[1].strip() or None
+                        if override is None:
+                            break
+                        info = self.wb.cell_rc(sheet, row, col)
+                    elif spec.value_column:
+                        from openpyxl.utils import column_index_from_string
+                        r = row + spec.row_offset
+                        if r < 1:
+                            break
+                        info = self.wb.cell_rc(sheet, r, column_index_from_string(spec.value_column))
+                        if info.raw is None and info.formula is None:
+                            break
+                    elif column is not None:
                         if col >= column:
                             continue
                         info = self.wb.cell_rc(sheet, row, column)
                         if info.raw is None and info.formula is None:
                             break
-                        unit = None
                     else:
                         if spec.direction == "right" and row in self._header_rows.get(sheet, ()):
                             break  # Tabellenkopf: rechts stehen weitere Spaltenüberschriften
                         info, unit = self._scan_value(sheet, row, col, spec)
                         if info is None:
                             break
-                    out.append(_Candidate((kind, -prio, -s_idx), info, original, unit or spec.unit, info.missing_cache))
+                    if spec.regex:
+                        source = override if override is not None else (info.value if info.formula else info.raw)
+                        m = re.search(spec.regex, str(source if source is not None else ""), re.IGNORECASE)
+                        if not m:
+                            break  # Muster passt nicht -> nächste Fundstelle
+                        override = (m.group(1) if m.groups() else m.group(0)).strip()
+                    out.append(_Candidate((kind, -prio, -s_idx), info, original, unit or spec.unit, info.missing_cache and override is None,
+                                          override=override, order=(s_idx, row, col)))
                     break
         return out, "profil_label"
 
     def extract_field(self, name: str, group: str, spec: FieldSpec, sheets: list[str], position: int | None, column: int | None = None) -> Extracted | None:
-        candidates, method = self._find(spec, sheets, column)
+        candidates, method = self._find(spec, sheets, column, position)
         if not candidates:
             return None
-        candidates.sort(key=lambda c: c.rank, reverse=True)
-        best = candidates[0]
+        if spec.occurrence in ("first", "last"):
+            candidates.sort(key=lambda c: c.order)
+            best = candidates[0] if spec.occurrence == "first" else candidates[-1]
+            same_rank = [best]
+        else:
+            candidates.sort(key=lambda c: c.rank, reverse=True)
+            best = candidates[0]
+            same_rank = [c for c in candidates if c.rank == best.rank and c.cell is not None]
+        return self._from_candidate(name, group, spec, best, position, method, same_rank)
+
+    @staticmethod
+    def _cand_value(c: _Candidate):
+        return c.override if c.override is not None else (c.cell.value if c.cell.formula else c.cell.raw)
+
+    def _from_candidate(self, name: str, group: str, spec: FieldSpec, best: _Candidate, position: int | None, method: str,
+                        same_rank: list[_Candidate] | None = None) -> Extracted:
         info = best.cell
         assert info is not None
         issues: list[Issue] = []
-        confidence = {3: 0.95, 2: 0.9, 1: 0.8}[best.rank[0]]
-        same_rank = [c for c in candidates if c.rank == best.rank and c.cell is not None]
-        distinct = {repr(c.cell.value if c.cell.formula else c.cell.raw) for c in same_rank}
+        confidence = {3: 0.95, 2: 0.9, 1: 0.8}.get(best.rank[0], 0.8)
+        same_rank = same_rank or [best]
+        distinct = {repr(self._cand_value(c)) for c in same_rank}
         if len(distinct) > 1:
             confidence = 0.5
             refs = ", ".join(f"{c.cell.sheet}!{c.cell.address}" for c in same_rank[:5])
             issues.append(Issue("mehrdeutig", f"Feld '{name}': mehrere gleichwertige Fundstellen mit unterschiedlichen Werten ({refs})", "warnung", name, position))
 
-        raw_value = info.value if info.formula else info.raw
-        if info.missing_cache:
+        raw_value = self._cand_value(best)
+        uses_formula = best.override is None and info.formula is not None
+        if uses_formula and info.missing_cache:
             issues.append(Issue("formel_ohne_cache", f"Feld '{name}': Formel {info.formula} in {info.sheet}!{info.address} ohne gespeicherten Ergebniswert", "warnung", name, position))
             confidence = min(confidence, 0.3)
         extra: dict = {}
-        if info.formula and not info.missing_cache:
+        if uses_formula and not info.missing_cache:
             def lookup(sh: str, addr: str):
                 c = self.wb.cell(sh, addr)
                 return (c.value if c.formula else c.raw), c.formula is not None
@@ -404,19 +478,34 @@ class Extractor:
             confidence = min(confidence, 0.3)
         return Extracted(
             field_name=name, group=group, position=position, value=value, text=text, sheet=info.sheet, cell=info.address,
-            label=best.label_text, formula=info.formula, cached=info.value if info.formula else None, unit=best.unit,
+            label=best.label_text, formula=info.formula if uses_formula else None,
+            cached=info.value if uses_formula else None, unit=best.unit,
             method=method, confidence=confidence, issues=issues, display_name=spec.name, extra=extra,
         )
 
     # --- Positionserkennung ---
     def detect_position_sheets(self) -> dict[int, str]:
-        rx = re.compile(self.profile.positions.sheet_regex)
+        pos = self.profile.positions
+        rx = re.compile(pos.sheet_regex)
+        must = [normalize_label(l) for l in pos.sheet_must_contain]
+        pn_spec = self.profile.item_fields.get("position_number")
         out: dict[int, str] = {}
         for sheet in self.sheets:
             m = rx.search(sheet)
-            if m:
-                num = int(m.group(1)) if m.groups() and m.group(1) else len(out) + 1
-                out.setdefault(num, sheet)
+            if not m:
+                continue
+            if must and not any(_label_matches(n, l, "prefix") for _, _, _, n in self._text_cache.get(sheet, []) for l in must):
+                continue
+            num = None
+            if m.groups() and m.group(1) and m.group(1).isdigit():
+                num = int(m.group(1))
+            elif pn_spec:
+                pn = self.extract_field("position_number", "item", pn_spec, [sheet], None)
+                if pn and isinstance(pn.value, int) and pn.value > 0:
+                    num = pn.value
+            if num is None or num in out:
+                num = max(out, default=0) + 1
+            out[num] = sheet
         return out
 
     def detect_position_columns(self) -> tuple[str | None, int | None, dict[int, int]]:
@@ -433,13 +522,48 @@ class Extractor:
                     best = (sheet, row, cols)
         return best
 
+    def _operations_table(self, table: OperationsTable, sheets: list[str], position: int, column: int | None) -> dict[str, Extracted]:
+        """Jede Zeile unter dem Spaltenkopf ist ein Arbeitsgang (Name aus der Zeile, Stunden aus der Positionsspalte)."""
+        out: dict[str, Extracted] = {}
+        if column is None:
+            return out
+        head = normalize_label(table.header_label)
+        stops = [normalize_label(x) for x in table.stop_labels]
+        for sheet in sheets:
+            start = next(((r, c) for r, c, _, n in self._text_cache.get(sheet, []) if n == head), None)
+            if not start:
+                continue
+            r0, name_col = start
+            empty = 0
+            for r in range(r0 + 1, r0 + 1 + table.max_rows):
+                name_cell = self.wb.cell_rc(sheet, r, name_col)
+                name = name_cell.raw if isinstance(name_cell.raw, str) else None
+                if not name or not name.strip():
+                    empty += 1
+                    if empty >= 3:
+                        break
+                    continue
+                empty = 0
+                if any(_label_matches(normalize_label(name), s_, "prefix") for s_ in stops):
+                    break
+                spec = FieldSpec(labels=[], type="number", unit="h", name=name.strip()[:120])
+                info = self.wb.cell_rc(sheet, r, column)
+                if info.raw is None and info.formula is None:
+                    continue
+                key = f"ag_{r:03d}"
+                cand = _Candidate((2, 0, 0), info, name.strip(), "h", info.missing_cache, order=(0, r, column))
+                ex = self._from_candidate(key, "operation", spec, cand, position, "profil_tabelle")
+                out[key] = ex
+            break
+        return out
+
     def run(self, profile_reason: str) -> WorkbookExtraction:
         prof = self.profile
         mode = prof.positions.mode
         pos_sheets = self.detect_position_sheets() if mode in {"auto", "sheet_per_position"} else {}
         col_sheet, header_row, pos_cols = self.detect_position_columns() if mode in {"auto", "column_per_position"} else (None, None, {})
         if mode == "auto":
-            if len(pos_sheets) >= 2:
+            if len(pos_sheets) >= 2 or (len(pos_sheets) == 1 and prof.positions.sheet_must_contain):
                 mode = "sheet_per_position"
             elif len(pos_cols) >= 2:
                 mode = "column_per_position"
@@ -464,6 +588,8 @@ class Extractor:
                 if ex:
                     fields[name] = ex
             ops: dict[str, Extracted] = {}
+            if prof.operations_table is not None:
+                ops.update(self._operations_table(prof.operations_table, sheets, position, column))
             for key, spec in op_specs:
                 ex = self.extract_field(key, "operation", spec, sheets, position, column)
                 if ex:

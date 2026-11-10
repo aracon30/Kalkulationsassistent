@@ -69,13 +69,13 @@ FIELD_LABELS = {
     "design_temperature_min": "TS min [°C]", "design_temperature_max": "TS max [°C]", "material": "Werkstoff",
     "diameter": "Behälterdurchmesser [mm]", "wall_thickness": "Wandstärke [mm]", "height": "Apparatehöhe [mm]",
     "volume": "Behältervolumen [l]", "filter_elements": "Anzahl Filterelemente", "filter_area": "Filterfläche [m²]",
-    "design_code": "Regelwerk", "weight": "Gewicht [kg]",
+    "design_code": "Regelwerk", "weight": "Gewicht [kg]", "quantity": "Stückzahl",
     "material_cost": "Materialkosten", "material_overhead": "Materialgemeinkosten", "purchased_parts_cost": "Zukaufteile",
     "manufacturing_hours": "Fertigungsstunden [h]", "manufacturing_hourly_rate": "Fertigungsstundensatz [€/h]",
     "manufacturing_cost": "Fertigungskosten", "engineering_hours": "Konstruktionsstunden [h]", "engineering_cost": "Konstruktionskosten",
     "documentation_cost": "Dokumentationskosten", "inspection_cost": "Externe Prüfkosten", "ndt_tuev_cost": "ZFP/TÜV",
     "surface_treatment_cost": "Oberflächenbehandlung", "procurement_cost": "Beschaffungskosten", "sales_overhead": "Vertriebsgemeinkosten",
-    "risk_profit": "Risiko-/Gewinnzuschlag", "total_cost": "Selbstkosten", "offer_price": "Angebotspreis", "calculation_date": "Kalkulationsdatum",
+    "risk_profit": "Risiko-/Gewinnzuschlag", "total_cost": "Selbstkosten", "calculated_price": "Kalkulierter Preis (Formel)", "offer_price": "Angebotspreis", "calculation_date": "Kalkulationsdatum",
 }
 templates.env.globals["FIELD_LABELS"] = FIELD_LABELS
 

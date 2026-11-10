@@ -190,3 +190,126 @@ def make_offer_folder(base: Path, offer_number: str = TEST_OFFER, year: str = "2
         make_drawing_pdf(folder / f"{p['drawing']}.pdf", p)
     (folder / "Notizen.txt").write_text("Testnotiz", encoding="utf-8")
     return folder
+
+
+# --- Nachbildung der HETA-Vorlage "Materialauszug / Kalkulation Behälterbau" (R05) -----------------
+# Nur der AUFBAU entspricht der Originalvorlage; Kunde, Mengen und Preise sind erfunden.
+
+R05_POSITIONS = [
+    {"pos": 1, "sheet": "KF-300", "title": "Pos. 1 – Kerzenfilter KF-301.11.200 (TEST), DN300", "drawing": "KF-9-301.11-005",
+     "mantel": ("Rohr, geschweißt", "Ø323,9 x 4,5", "1.4404"), "elements": ("Filterkerzen 5 µm TEST", 7), "hours": 88, "weight": 250,
+     "material_rows": [("Behältermantel", 409), ("Behälterflansch", 485), ("Filterkerzen 5 µm TEST", 5040)], "chosen": 33750},
+    {"pos": 2, "sheet": "BF-1000", "title": "Pos. 2 – Beutelfilter BF-1001.11.200 (TEST), DN1000", "drawing": "BF-9-1001.11-001",
+     "mantel": ("Blech", "3190 x 1350 x 8", "1.4404"), "elements": ("Filterbeutel PTFE TEST", 12), "hours": 156, "weight": 1200,
+     "material_rows": [("Behältermantel", 2100), ("Behälterboden", 900), ("Filterbeutel PTFE TEST", 1440)], "chosen": 59750,
+     "boden": "Ø1016 x 8"},
+]
+
+
+def make_heta_r05_kalkulation(path: Path, offer_slash: str = "SE-99902/26", positions: list[dict] | None = None, *, extra_rows: int = 0) -> Path:
+    positions = positions or R05_POSITIONS
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    cache: dict[str, dict[str, object]] = {}
+    drawings = " / ".join(f"{p['drawing']} (Pos. {p['pos']})" for p in positions)
+    for p in positions:
+        ws = wb.create_sheet(p["sheet"])
+        c: dict[str, object] = {}
+        ws["A1"] = "Materialauszug / Kalkulation Behälterbau"
+        ws["A2"], ws["C2"], ws["E2"] = "Kunde: Testkunde AB", "Benennung: Filtergehäuse TEST, DN200", f"Angebot Nr: {offer_slash}"
+        ws["G2"], ws["O2"], ws["Q2"] = f"Zeichnungsnummer: {drawings}", "Datum: 04.11.2026", "Name: XX"
+        for col, txt in zip("ABCDEFGHIJOQR", ["Pos. ", "Benennung", "Form", "Abmaße", "Anzahl", "Länge", "Norm", "Material",
+                                                "APZ Kosten", "Einzelpreis Ø-Preis ( Stck / m)", "Kosten", "Fertigungskosten", "Gesamtkosten"]):
+            ws[f"{col}3"] = txt
+        ws["B4"] = p["title"]
+        r = 5
+        mat_total = 0.0
+        rows = list(p["material_rows"]) + [(f"Zusatzteil {i}", 10) for i in range(extra_rows)]
+        for name, cost in rows:
+            ws[f"A{r}"], ws[f"B{r}"], ws[f"O{r}"], ws[f"R{r}"] = r - 4, name, cost, f"=O{r}+Q{r}"
+            c[f"R{r}"] = cost
+            if name == "Behältermantel":
+                ws[f"C{r}"], ws[f"D{r}"], ws[f"H{r}"] = p["mantel"]
+            if name == "Behälterboden" and p.get("boden"):
+                ws[f"D{r}"], ws[f"H{r}"] = p["boden"], "1.4404"
+            if name == p["elements"][0]:
+                ws[f"E{r}"] = p["elements"][1]
+            mat_total += cost
+            r += 1
+        last = r - 1
+        r += 1
+        m = r                                              # Material Gesamtkosten
+        ws[f"A{m}"], ws[f"B{m}"], ws[f"O{m}"] = "HETA", "Material Gesamtkosten", f"=SUM(R5:R{last})"
+        c[f"O{m}"] = mat_total
+        f = m + 2                                          # Fertigung
+        ws[f"B{f}"], ws[f"D{f}"], ws[f"E{f}"], ws[f"F{f}"], ws[f"G{f}"] = "Fertigungskosten Schweißen (R04)", "Stundensatz:", 65, "Anzahl Stunden", p["hours"]
+        ws[f"H{f}"], ws[f"I{f}"], ws[f"O{f}"] = "Anzahl Gehäuse", 1, f"=I{f}*G{f}*E{f}"
+        c[f"O{f}"] = p["hours"] * 65
+        k = f + 2
+        ws[f"B{k}"], ws[f"D{k}"], ws[f"E{k}"], ws[f"F{k}"], ws[f"G{k}"], ws[f"O{k}"] = "Konstruktion (R04)", "Stundensatz:", 75, 40, "[h]", f"=E{k}*F{k}"
+        c[f"O{k}"] = 3000
+        d = k + 2
+        ws[f"B{d}"], ws[f"E{d}"], ws[f"F{d}"], ws[f"O{d}"] = "Dokumentation (R04)", 75, 20, f"=F{d}*E{d}"
+        c[f"O{d}"] = 1500
+        t = d + 2
+        ws[f"B{t}"], ws[f"O{t}"] = "Third Party, Berechnung (Ab 2022 erhöhte Kosten) (R04)", 2800
+        z = t + 2
+        ws[f"B{z}"], ws[f"O{z}"] = "ZFP + TÜV (5€/Film) (R04)", 500
+        b = z + 2
+        ws[f"B{b}"], ws[f"D{b}"], ws[f"E{b}"], ws[f"F{b}"], ws[f"G{b}"] = "Beizen / Passivieren (R04)", "Preis pro Kilo", 1, "Gewicht in Kg", p["weight"]
+        ws[f"H{b}"], ws[f"I{b}"], ws[f"O{b}"] = "Anzahl Gehäuse", f"=I{f}", f"=E{b}*G{b}*I{b}"
+        c[f"I{b}"], c[f"O{b}"] = 1, p["weight"]
+        h = b + 2
+        ws[f"A{h}"], ws[f"B{h}"], ws[f"D{h}"], ws[f"F{h}"], ws[f"O{h}"] = "Hebesätze", "Materialgemeinkosten ", "Hebesatz", 0.08, f"=O{m}*F{h}"
+        ws[f"F{h}"].number_format = "0%"
+        mgk = mat_total * 0.08
+        c[f"O{h}"] = mgk
+        rg = h + 2
+        pre = mat_total + mgk + p["hours"] * 65 + 3000 + 1500 + 2800 + 500 + p["weight"]
+        ws[f"R{rg - 1}"] = f"=SUM(R{m}:R{rg - 2})"
+        c[f"R{rg - 1}"] = pre
+        ws[f"B{rg}"], ws[f"D{rg}"], ws[f"F{rg}"], ws[f"O{rg}"] = "Risiko + Gewinn", "Hebesatz", 0.2, f"=R{rg - 1}*F{rg}"
+        ws[f"F{rg}"].number_format = "0%"
+        c[f"O{rg}"] = pre * 0.2
+        s1 = rg + 2
+        ws[f"A{s1}"], ws[f"B{s1}"], ws[f"D{s1}"], ws[f"O{s1}"] = "Endpreise", "Summe bei Gesamtabnahme", "EX Works", f"=R{rg - 1}+O{rg}"
+        c[f"O{s1}"] = pre * 1.2
+        s2 = s1 + 4
+        ws[f"B{s2}"], ws[f"D{s2}"], ws[f"O{s2}"] = "Summe bei Gesamtabnahme", "FCA Lich, inkl. Provision", f"=O{s1}"
+        c[f"O{s2}"] = pre * 1.2
+        ws[f"N{s2 + 2}"], ws[f"O{s2 + 2}"], ws[f"B{s2 + 3}"] = "gewählt:", p["chosen"], "R05_2023-05"
+        cache[p["sheet"]] = c
+    v = wb.create_sheet("Vergleich")
+    v["B2"] = "Vergleich (TEST)"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    set_cached_values(path, cache)
+    return path
+
+
+def make_heta_fertigungszeit(path: Path, offer_slash: str = "SE-99902/26", hours: tuple[float, float] = (88, 156)) -> Path:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Fertigungszeit"
+    ws["A1"] = f"{offer_slash} – Fertigungszeit je Behälter"
+    ws["A2"] = "TEST – Zeichnungen KF-9-301.11-005 (Pos. 1) / BF-9-1001.11-001 (Pos. 2). Werkstoff 1.4404."
+    for col, txt in zip("ABCDE", ["Nr.", "Arbeitsgang", "Pos. 1 KF DN300 [h]", "Pos. 2 BF DN1000 [h]", "Bemerkung"]):
+        ws[f"{col}4"] = txt
+    steps = [("Schweißen (WIG-Wurzel + MAG), inkl. Nebenzeiten", 9.5, 25.0), ("Zuschnitt Mantel, Fasen", 2, 4),
+             ("Wasserdruckprobe (Blindflansche setzen, füllen)", 6, 7), ("Endmontage (Kerzen bzw. Körbe/Beutel, Deckel)", 3, 4)]
+    for i, (name, a, b) in enumerate(steps, start=5):
+        ws[f"A{i}"], ws[f"B{i}"], ws[f"C{i}"], ws[f"D{i}"] = i - 4, name, a, b
+    g = 5 + len(steps)
+    ws[f"B{g}"], ws[f"C{g}"], ws[f"D{g}"] = "Grundzeit je Behälter", f"=SUM(C5:C{g - 1})", f"=SUM(D5:D{g - 1})"
+    ws[f"B{g + 1}"], ws[f"C{g + 1}"], ws[f"D{g + 1}"] = "+ Verteilzeit (REFA)", f"=C{g}*0.15", f"=D{g}*0.15"
+    ws[f"B{g + 2}"], ws[f"C{g + 2}"], ws[f"D{g + 2}"] = "Fertigungszeit je Behälter", f"=C{g}+C{g + 1}", f"=D{g}+D{g + 1}"
+    ws[f"B{g + 3}"], ws[f"C{g + 3}"], ws[f"D{g + 3}"] = "Fertigungszeit gerundet [h]", hours[0], hours[1]
+    ws[f"B{g + 5}"], ws[f"C{g + 5}"], ws[f"D{g + 5}"] = "Kosten Fertigung", "Pos. 1 KF", "Pos. 2 BF"
+    p = wb.create_sheet("Parameter")
+    p["A4"], p["C4"], p["D4"] = "Geometrie je Behälter", "Pos. 1 KF DN300", "Pos. 2 BF DN1000"
+    sa, sb = sum(x[1] for x in steps), sum(x[2] for x in steps)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    set_cached_values(path, {"Fertigungszeit": {f"C{g}": sa, f"D{g}": sb, f"C{g + 1}": sa * 0.15, f"D{g + 1}": sb * 0.15,
+                                                f"C{g + 2}": sa * 1.15, f"D{g + 2}": sb * 1.15}})
+    return path

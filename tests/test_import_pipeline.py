@@ -65,7 +65,7 @@ def test_validated_profile_gives_verified_values(db, offer_base, tmp_path, monke
     from app.config import get_settings
     prof_dir = tmp_path / "profiles"
     shutil.copytree(get_settings().profiles_dir, prof_dir)
-    for name in ("heta_2026.yaml", "heta_fertigungszeit.yaml"):
+    for name in ("generic_excel.yaml", "generic_fertigungszeit.yaml"):
         p = prof_dir / name
         p.write_text(p.read_text(encoding="utf-8").replace("validated: false", "validated: true"), encoding="utf-8")
     monkeypatch.setattr(get_settings(), "profiles_dir", prof_dir)
@@ -265,3 +265,32 @@ def test_rescan_reclassifies_unchanged_files_after_rule_update(db, offer_base):
     assert summary.reclassified == 6 and summary.new_documents == 0
     kalk = db.scalars(select(Document).where(Document.file_name.like("%Kalkulation.xlsx"))).one()
     assert kalk.detected_offer_number == TEST_OFFER and kalk.import_status == ImportStatus.NEU
+
+
+def test_heta_r05_template_end_to_end(db, env):
+    """Aufbau wie SE-13705.26 (Originalvorlage R05), Werte synthetisch."""
+    from tests.factory import R05_POSITIONS, make_heta_fertigungszeit, make_heta_r05_kalkulation
+    folder = env / "K" / "SE-99902.26-Testkunde"
+    make_heta_r05_kalkulation(folder / "SE-99902.26_Kalkulation.xlsx", extra_rows=3)
+    make_heta_fertigungszeit(folder / "SE-99902.26_Fertigungszeit.xlsx")
+    make_heta_r05_kalkulation(folder / "Kalkulation R06_01-2026.xlsx", positions=[dict(R05_POSITIONS[0], chosen=1)])  # Vorlagenkopie
+    scan_and_inventory(db, str(env / "K"))
+    run_import(db)
+    offer = db.scalars(select(Offer)).one()
+    assert offer.offer_number == "SE-99902.26" and offer.customer == "Testkunde AB" and str(offer.offer_date) == "2026-11-04"
+    kf, bf = offer.items
+    assert (kf.position_number, kf.product_type, kf.dn, kf.material, kf.filter_elements, kf.drawing_number) == (1, "Kerzenfilter", 300, "1.4404", 7, "KF-9-301.11-005")
+    assert (kf.diameter, kf.wall_thickness, kf.weight, kf.quantity) == (323.9, 4.5, 250, 1)
+    assert (bf.product_type, bf.dn, bf.filter_elements, bf.diameter, bf.wall_thickness) == ("Beutelfilter", 1000, 12, 1016, 8)
+    c1 = kf.current_calculation
+    assert c1.offer_price == 33750 and c1.manufacturing_hours == 88 and c1.manufacturing_hourly_rate == 65
+    assert c1.engineering_hours == 40 and c1.calculated_price == pytest.approx(c1.total_cost * 1.2)
+    assert c1.document.file_name == "SE-99902.26_Kalkulation.xlsx"
+    ops = {o.operation_key: o for o in kf.operations}
+    assert ops["gesamt_gerundet"].planned_hours == 88 and ops["grundzeit"].planned_hours == pytest.approx(20.5)
+    assert sum(1 for k in ops if k.startswith("ag_")) == 4
+    codes = {i.code for i in db.scalars(select(ReviewIssue))}
+    assert not codes & {"angebotsnummer_abweichend", "widerspruch_fertigungszeit", "summe_abweichend", "widerspruch", "keine_positionen"}
+    tpl = db.scalars(select(Document).where(Document.file_name == "Kalkulation R06_01-2026.xlsx")).one()
+    assert tpl.import_status == ImportStatus.IGNORIERT and "vorlage" in tpl.import_message.lower()
+    assert "vorlage_ignoriert" in codes

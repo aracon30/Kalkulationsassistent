@@ -32,7 +32,7 @@ from app.services.excel_importer import Extracted, ImportProfile, Issue, Profile
 from app.services.excel_reader import ExcelReadError
 from app.services.folder_scanner import SUPPORTED_EXTENSIONS, ScanResult, scan_directory, sha256_file
 from app.services.normalize import normalize_material, normalize_product_type
-from app.services.offer_numbers import detect_offer_number, detect_revision
+from app.services.offer_numbers import detect_offer_number, detect_revision, find_offer_numbers
 from app.services.pdf_importer import PdfExtraction, extract_pdf
 
 log = logging.getLogger(__name__)
@@ -41,10 +41,13 @@ IMPORTABLE_TYPES = {DocType.KALKULATION, DocType.FERTIGUNGSZEIT, DocType.ZEICHNU
                     DocType.STUECKLISTE, DocType.LIEFERANTENANGEBOT}
 ITEM_FIELDS = ["position_number", "product_type", "description", "drawing_number", "dn", "design_pressure",
                "design_temperature_min", "design_temperature_max", "material", "diameter", "wall_thickness", "height",
-               "volume", "filter_elements", "filter_area", "design_code", "weight"]
+               "volume", "filter_elements", "filter_area", "design_code", "weight", "quantity"]
 OFFER_FIELDS = ["customer", "project_name", "offer_date", "country", "industry", "status", "currency", "revision"]
 PDF_CROSSCHECK = ["drawing_number", "product_type", "dn", "design_pressure", "design_temperature_min", "design_temperature_max",
                   "material", "design_code", "filter_area", "filter_elements"]
+
+
+TEMPLATE_NAME_RE = re.compile(r"(?i)^kalkulation[\s_-]*r\d{2}(?!\d)")
 
 
 class ImportCancelled(Exception):
@@ -437,7 +440,8 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
     for name, e in ex.header.items():
         ev = _store_value(session, doc, e, profile_validated=ex.profile_validated, target="offer")
         if name == "offer_number":
-            if e.value and offer.offer_number.lower() not in str(e.value).lower().replace(" ", ""):
+            found = [n for n, _ in find_offer_numbers(str(e.value or ""))]
+            if e.value and offer.offer_number not in found:
                 ev.validation_status = ValStatus.PRUEFBEDARF
                 _issue(session, "angebotsnummer_abweichend", f"{doc.file_name}: Angebotsnummer in der Datei ('{e.value}') weicht von Ordner/Dateiname ({offer.offer_number}) ab", "warnung", offer=offer, document=doc, value=ev)
             continue
@@ -503,27 +507,33 @@ def _check_calculation(session: Session, item: OfferItem, calc: Calculation, doc
         _issue(session, "summe_abweichend", f"Pos. {item.position_number}: Fertigungskosten {c:,.2f} ≠ Stunden × Satz ({h:g} × {r:g} = {h * r:,.2f})", "info", item=item, document=doc)
 
 
+SPECIAL_OPERATIONS = {"grundzeit", "verteilzeit", "gesamt", "gesamt_gerundet"}
+
+
 def _store_operations(session: Session, offer: Offer, item: OfferItem, doc: Document, ops: dict[str, Extracted], profile_validated: bool) -> None:
     calc = item.current_calculation
-    total_ex = ops.get("gesamt")
-    op_sum = 0.0
-    n = 0
+    hours = {k: e.value for k, e in ops.items() if isinstance(e.value, (int, float))}
+    steps = {k: v for k, v in hours.items() if k not in SPECIAL_OPERATIONS}
     for key, e in ops.items():
-        ev = _store_value(session, doc, e, profile_validated=profile_validated, item=item, calc=None, target="operation")
+        _store_value(session, doc, e, profile_validated=profile_validated, item=item, calc=None, target="operation")
         session.add(ManufacturingOperation(
-            calculation_id=calc.id if calc else None, offer_item_id=item.id, document_id=doc.id, operation_key=key,
-            operation_name=e.display_name or key, planned_hours=e.value if isinstance(e.value, (int, float)) else None,
+            calculation_id=calc.id if calc else None, offer_item_id=item.id, document_id=doc.id, operation_key=key[:64],
+            operation_name=(e.display_name or key)[:128], planned_hours=hours.get(key),
             source_reference=f"{doc.file_name} – {e.source_ref}",
         ))
-        if key != "gesamt" and isinstance(e.value, (int, float)):
-            op_sum += e.value
-            n += 1
-        _ = ev
     session.flush()
-    total = total_ex.value if total_ex and isinstance(total_ex.value, (int, float)) else None
-    if total is not None and n and abs(op_sum - total) > max(0.05, 0.01 * total):
-        _issue(session, "summe_abweichend", f"Pos. {item.position_number}: Summe der Arbeitsgänge {op_sum:g} h ≠ Gesamtfertigungszeit {total:g} h ({doc.file_name})", "warnung", item=item, document=doc)
-    effective = total if total is not None else (op_sum if n else None)
+    step_sum = sum(steps.values()) if steps else None
+    if step_sum is not None:
+        if "grundzeit" in hours:
+            check, base, label = step_sum, hours["grundzeit"], "Grundzeit"
+        elif "gesamt" in hours:
+            check, base, label = step_sum + hours.get("verteilzeit", 0.0), hours["gesamt"], "Gesamtfertigungszeit"
+        else:
+            check = base = None
+        if base is not None and abs(check - base) > max(0.05, 0.01 * base):
+            _issue(session, "summe_abweichend", f"Pos. {item.position_number}: Summe der Arbeitsgänge {check:g} h ≠ {label} {base:g} h ({doc.file_name})", "warnung", item=item, document=doc)
+    # Für den Vergleich mit der Kalkulation: gerundeter Wert (wird dort übernommen), sonst Gesamt, sonst Summe
+    effective = hours.get("gesamt_gerundet", hours.get("gesamt", step_sum))
     if calc and calc.manufacturing_hours is not None and effective is not None and validation.values_conflict(calc.manufacturing_hours, effective):
         _issue(session, "widerspruch_fertigungszeit", f"Pos. {item.position_number}: Fertigungsstunden in Kalkulation ({calc.manufacturing_hours:g} h) ≠ Fertigungszeitkalkulation ({effective:g} h)", "warnung", item=item, document=doc)
 
@@ -607,6 +617,17 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
     order = {DocType.KALKULATION: 0, DocType.FERTIGUNGSZEIT: 1, DocType.ZEICHNUNG: 2}
     docs = sorted(docs, key=lambda d: (order.get(d.document_type, 9), d.modified_at or datetime.min, d.file_path))
     kalk_docs: list[Document] = []
+    # Unausgefüllte Vorlagenkopien ("Kalkulation R06_01-2026.xlsx") nicht als Kalkulation werten, wenn das
+    # Angebot eine Kalkulation mit Angebotsnummer im Dateinamen besitzt.
+    named = [d for d in docs if d.document_type == DocType.KALKULATION and find_offer_numbers(d.file_name)]
+    if named:
+        for d in [d for d in docs if d.document_type == DocType.KALKULATION and d not in named and TEMPLATE_NAME_RE.search(d.file_name)]:
+            docs.remove(d)
+            d.offer_id = offer.id
+            d.import_status = ImportStatus.IGNORIERT
+            d.import_message = f"Vermutlich Kalkulationsvorlage (ohne Angebotsnummer im Namen); maßgeblich: {named[0].file_name}"
+            _issue(session, "vorlage_ignoriert", f"{d.file_name}: als Vorlagenkopie nicht importiert – bei Bedarf umbenennen oder mit „Alle erneut importieren“ prüfen", "info", offer=offer, document=d)
+            stats["log"].append((d.id, d.file_path, "import", "ignoriert", d.import_message))
     for doc in docs:
         reporter.check_cancel()
         on_file(doc.file_path)
