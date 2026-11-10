@@ -100,6 +100,8 @@ class ImportProfile(BaseModel):
     operations_table: OperationsTable | None = None
     material_table: MaterialTable | None = None
     trade_table: TradeTable | None = None
+    service_table: TradeTable | None = None                              # Serviceeinsatz: Zeilen mit Sätzen/Anzahl
+    service_fields: dict[str, FieldSpec] = Field(default_factory=dict)  # Summe / Angebotspreis des Einsatzes
     calculation_fallbacks: dict[str, str] = Field(default_factory=dict)  # Zielfeld -> Ersatzfeld
     header_constants: dict[str, str] = Field(default_factory=dict)       # feste Kopfwerte der Vorlage, z. B. currency: EUR
     source_file: str | None = None
@@ -251,6 +253,8 @@ class WorkbookExtraction:
     constants: dict[str, str] = field(default_factory=dict)
     material_lines: dict[int, list[dict]] = field(default_factory=dict)
     trade_lines: list[dict] = field(default_factory=list)
+    service_lines: list[dict] = field(default_factory=list)
+    service: dict[str, Extracted] = field(default_factory=dict)
 
 
 @dataclass
@@ -706,7 +710,15 @@ class Extractor:
             for sheet in self.wb.sheetnames:
                 if re.search(prof.trade_table.sheet_regex, sheet):
                     result.trade_lines.extend(self._material_table(prof.trade_table, sheet))
-        if not result.positions and not result.trade_lines:
+        if prof.service_table is not None:
+            for sheet in self.wb.sheetnames:
+                if re.search(prof.service_table.sheet_regex, sheet):
+                    result.service_lines.extend(self._material_table(prof.service_table, sheet))
+            for name, spec in prof.service_fields.items():
+                ex = self.extract_field(name, "service", spec, self.wb.sheetnames, None)
+                if ex:
+                    result.service[name] = ex
+        if not result.positions and not result.trade_lines and not result.service_lines:
             result.issues.append(Issue("keine_positionen", "Keine Angebotsposition mit auswertbaren Werten gefunden", "fehler"))
         if self.wb.full_calc_on_load:
             result.issues.append(Issue("neuberechnung_erzwungen", "Arbeitsmappe verlangt Neuberechnung beim Öffnen – gespeicherte Formelergebnisse können veraltet sein", "warnung"))

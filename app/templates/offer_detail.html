@@ -66,6 +66,30 @@
       {% for i in offer_issues %}<div class="issue {{ i.severity }}">{{ i.message }}</div>{% endfor %}
     </div>
 
+    {% for svc in services %}
+    <div class="card">
+      <h2>Serviceeinsatz{% if svc.title %} – {{ svc.title }}{% endif %} <span class="hint">{{ svc.document.file_name if svc.document else '' }}{% if svc.abroad %} · Ausland{% endif %}</span></h2>
+      <table class="table compact">
+        <tr><th>Benennung</th><th class="num">Satz Inland</th><th class="num">Satz Ausland</th><th class="num">Anzahl</th><th class="num">Betrag [€]</th></tr>
+        {% for l in svc.lines %}<tr class="{{ 'old' if not l.quantity }}"><td>{{ l.description }}</td><td class="num">{{ l.rate_domestic|de_num(2, '') }}</td><td class="num">{{ l.rate_abroad|de_num(2, '') }}</td>
+          <td class="num">{{ l.quantity|de_auto('') }}</td><td class="num">{{ l.total|de_num(2, '') }}</td></tr>{% endfor %}
+        <tr class="sum-row"><td colspan="4">Gesamt (Kalkulation)</td><td class="num">{{ svc.total_cost|de_num(2) }}</td></tr>
+        <tr class="sum-row"><td colspan="4">Angebotspreis</td><td class="num">{{ svc.offer_price|de_num(2) }}</td></tr>
+      </table>
+    </div>
+    {% endfor %}
+    {% if trade %}
+    <div class="card">
+      <h2>Ersatzteile / Handelsware <span class="hint">{{ trade|length }} Zeilen</span></h2>
+      <div class="table-wrap"><table class="table compact">
+        <tr><th>Benennung</th><th>Abmessung</th><th class="num">Menge</th><th class="num">EK/Stk</th><th class="num">VK/Stk</th><th class="num">Faktor</th><th>Lieferzeit</th></tr>
+        {% for t in trade %}<tr><td>{% if t.is_assembly %}<strong>{{ t.description }}</strong>{% else %}{{ t.description }}{% endif %}</td><td class="nowrap">{{ t.dimensions or '' }}</td>
+          <td class="num">{{ t.quantity|de_auto('') }}</td><td class="num">{{ t.purchase_price|de_num(2) }}</td><td class="num">{{ t.sales_price|de_num(2) }}</td>
+          <td class="num">{{ t.markup_factor|de_num(2) }}</td><td class="small">{{ t.lead_time or '' }}</td></tr>{% endfor %}
+      </table></div>
+    </div>
+    {% endif %}
+
     {% for row in items %}{% set it = row.item %}{% set c = row.calc %}
     <div class="card position">
       <h2>Pos. {{ it.position_number }} – {{ it.product_type or 'Produkttyp unbekannt' }} {{ status_badge(it.validation_status) }}</h2>
@@ -120,7 +144,7 @@
       {% else %}<p class="muted">Keine Fertigungszeiten importiert.</p>{% endif %}
     </div>
     {% else %}
-    <div class="card"><p class="muted">Keine Positionen erkannt.</p></div>
+    {% if not services and not trade %}<div class="card"><p class="muted">Keine Positionen erkannt.</p></div>{% endif %}
     {% endfor %}
   </section>
 </div>

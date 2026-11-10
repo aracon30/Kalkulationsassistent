@@ -12,7 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.models import Calculation, Document, MaterialLine, Offer, OfferItem, TradeItem
+from app.models import Calculation, Document, MaterialLine, Offer, OfferItem, ServiceCalc, ServiceLine, TradeItem
 from app.services.excel_reader import parse_number
 from app.services.normalize import price_group_key
 from app.web import templates
@@ -73,12 +73,13 @@ def material_page(request: Request, q: str | None = None, kategorie: str | None 
                   d_min: str | None = None, d_max: str | None = None, dn: str | None = None, jahr: str | None = None,
                   ansicht: str = "gruppen", alle_versionen: bool = False, db: Session = Depends(get_db)):
     trade = list(db.scalars(trade_query(q, kategorie, d_min, d_max, jahr).limit(2000))) if ansicht == "handelsware" else []
-    lines = [] if ansicht == "handelsware" else list(db.scalars(_query(db, q, kategorie, werkstoff, d_min, d_max, dn, jahr, not alle_versionen).limit(5000)))
+    service = service_overview(db, q, jahr) if ansicht == "service" else None
+    lines = [] if ansicht in ("handelsware", "service") else list(db.scalars(_query(db, q, kategorie, werkstoff, d_min, d_max, dn, jahr, not alle_versionen).limit(5000)))
     cats = sorted({c for (c,) in db.execute(select(MaterialLine.category).distinct()) if c} | {c for (c,) in db.execute(select(TradeItem.category).distinct()) if c})
     years = [y for (y,) in db.execute(select(Offer.year).distinct().order_by(Offer.year.desc())) if y]
     f = {"q": q or "", "kategorie": kategorie or "", "werkstoff": werkstoff or "", "d_min": d_min or "", "d_max": d_max or "",
          "dn": dn or "", "jahr": jahr or "", "ansicht": ansicht, "alle_versionen": alle_versionen}
-    return templates.TemplateResponse(request, "materials.html", {"nav": "material", "lines": lines, "groups": _group(lines) if ansicht == "gruppen" else [], "trade": trade,
+    return templates.TemplateResponse(request, "materials.html", {"nav": "material", "lines": lines, "groups": _group(lines) if ansicht == "gruppen" else [], "trade": trade, "service": service,
                                                                   "cats": cats, "years": years, "f": f, "query": request.url.query})
 
 
@@ -142,3 +143,39 @@ def trade_csv(q: str | None = None, kategorie: str | None = None, d_min: str | N
     buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="handelsware.csv"'})
+
+
+KIND_LABELS = {"personal": "Personal", "tag": "Tagessatz/Spesen", "unterkunft": "Unterkunft", "reise": "Reise", "km": "Fahrkosten/km", "sonstiges": "Sonstiges"}
+
+
+def service_overview(db: Session, q: str | None, jahr: str | None) -> dict:
+    """Serviceeinsätze: Liste der Einsätze und Satz-Statistik je Leistungsart (Benennung)."""
+    stmt = select(ServiceCalc).join(Offer, ServiceCalc.offer_id == Offer.id).options(
+        selectinload(ServiceCalc.offer), selectinload(ServiceCalc.lines), selectinload(ServiceCalc.document))
+    for token in (q or "").split():
+        like = f"%{token}%"
+        stmt = stmt.where(or_(ServiceCalc.title.ilike(like), Offer.customer.ilike(like), Offer.offer_number.ilike(like)))
+    if jahr and str(jahr).isdigit():
+        stmt = stmt.where(Offer.year == int(jahr))
+    calcs = list(db.scalars(stmt.order_by(Offer.offer_date.desc().nullslast(), Offer.offer_number.desc())))
+    rates: dict[tuple, list] = defaultdict(list)
+    for c in calcs:
+        for l in c.lines:
+            for col, val in (("Inland", l.rate_domestic), ("Ausland", l.rate_abroad)):
+                if val is not None:
+                    rates[(l.kind, (l.description or "").strip(), col)].append((val, c.offer))
+    rate_rows = []
+    for (kind, desc, col), vals in rates.items():
+        nums = sorted(v for v, _ in vals)
+        latest = max(vals, key=lambda x: (x[1].offer_date is not None, x[1].offer_date, x[1].id))
+        rate_rows.append({"kind": KIND_LABELS.get(kind, kind), "description": desc, "column": col, "n": len(nums), "min": nums[0],
+                          "median": statistics.median(nums), "max": nums[-1], "latest": latest[0], "latest_offer": latest[1]})
+    rate_rows.sort(key=lambda r: (r["kind"], r["description"], r["column"]))
+    summary = []
+    for c in calcs:
+        by = defaultdict(float)
+        for l in c.lines:
+            if l.quantity:
+                by[l.kind] += l.quantity
+        summary.append({"calc": c, "personal_h": by.get("personal"), "days": by.get("tag"), "nights": by.get("unterkunft"), "km": by.get("km")})
+    return {"calcs": summary, "rates": rate_rows}

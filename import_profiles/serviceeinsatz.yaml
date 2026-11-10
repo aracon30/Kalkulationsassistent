@@ -1,0 +1,39 @@
+# Vorlage "Serviceeinsatz / Kalkulation" (Aufbau anhand DE-13511.26_Kalkulation Service 2026.xlsx):
+#   Zeile 2: "Kunde: …", "Benennung: …", "Angebot Nr. …"
+#   Tabelle: Pos. | Benennung | Deutschland | Ausland | Anzahl | Gesamtkosten
+#   "Gesamt:" = Summe; zwei Zeilen darunter (ohne Beschriftung) der angebotene Preis
+profile:
+  id: serviceeinsatz
+  name: Serviceeinsatz / Kalkulation
+  document_type: angebotskalkulation
+  validated: true
+  priority: 20
+
+detection:
+  filename_regex: ['(?i)service|montage|kalk']
+  sheet_name_regex: ['(?i)service']
+  labels_any: [Serviceeinsatz / Kalkulation, Service Experte, Monteur, Unterkunft pro Nacht, Fahrkosten pro km, Kosten pro Tag, Reisekosten]
+  min_score: 4
+
+positions:
+  mode: single
+
+header_fields:
+  customer: {labels: [Kunde], inline: true, type: text}
+  project_name: {labels: [Benennung], inline: true, type: text}
+
+service_table:
+  sheet_regex: '.'
+  header_label: Benennung
+  columns:
+    line_no: [Pos.]
+    description: [Benennung]
+    rate_domestic: [Deutschland, Inland, Satz]
+    rate_abroad: [Ausland]
+    quantity: [Anzahl, Menge, Stunden, Tage]
+    total: [Gesamtkosten, Gesamt, Kosten]
+  stop_labels: [Gesamt]
+
+service_fields:
+  total_cost: {labels: [Gesamt], value_column: G, type: number, unit: EUR}
+  offer_price: {labels: [Gesamt], value_column: G, row_offset: 2, type: number, unit: EUR}

@@ -117,12 +117,15 @@ def offer_detail(offer_id: int, request: Request, doc: int | None = None, db: Se
                       "msum": sum(l.cost for l in mlines if l.cost is not None),
                       "drawings": [d for d in docs if d.offer_item_id == item.id and d.extension == ".pdf"]})
     offer_issues = list(db.scalars(select(ReviewIssue).where(ReviewIssue.offer_id == offer.id, ReviewIssue.offer_item_id.is_(None), ReviewIssue.status == "offen")))
+    from app.models import ServiceCalc, TradeItem
+    services = list(db.scalars(select(ServiceCalc).where(ServiceCalc.offer_id == offer.id)))
+    trade = list(db.scalars(select(TradeItem).where(TradeItem.offer_id == offer.id).order_by(TradeItem.document_id, TradeItem.source_row)))
     pdfs = [d for d in docs if d.extension == ".pdf" and d.is_current]
     pdfs.sort(key=lambda d: (d.document_type != DocType.ZEICHNUNG, d.offer_item.position_number if d.offer_item else 999, d.file_name))
     selected = doc_by_id.get(doc) if doc else (pdfs[0] if pdfs else None)
     return templates.TemplateResponse(request, "offer_detail.html", {
         "nav": "angebote", "offer": offer, "docs": docs, "pdfs": pdfs, "selected": selected, "items": items, "sources": dict(sources),
-        "offer_issues": offer_issues, "item_fields": ITEM_DISPLAY, "calc_fields": CALC_DISPLAY, "ai": get_provider(),
+        "offer_issues": offer_issues, "services": services, "trade": trade, "item_fields": ITEM_DISPLAY, "calc_fields": CALC_DISPLAY, "ai": get_provider(),
         "status_choices": STATUS_CHOICES,
     })
 

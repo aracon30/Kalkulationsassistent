@@ -486,3 +486,38 @@ class TradeItem(Base):
 
     offer: Mapped[Offer] = relationship()
     document: Mapped[Document | None] = relationship()
+
+
+class ServiceCalc(Base):
+    """Kalkulation eines Serviceeinsatzes (Vorlage "Serviceeinsatz / Kalkulation")."""
+    __tablename__ = "service_calcs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    offer_id: Mapped[int] = mapped_column(ForeignKey("offers.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str | None] = mapped_column(String(255))          # "Benennung", z. B. Wartung
+    total_cost: Mapped[float | None] = mapped_column(Float)          # Summe der Zeilen ("Gesamt")
+    offer_price: Mapped[float | None] = mapped_column(Float)         # Wert unter "Gesamt" (angebotener Preis)
+    abroad: Mapped[bool] = mapped_column(Boolean, default=False)     # Sätze aus Spalte "Ausland" verwendet
+
+    offer: Mapped[Offer] = relationship()
+    document: Mapped[Document | None] = relationship()
+    lines: Mapped[list[ServiceLine]] = relationship(back_populates="service_calc", cascade="all, delete-orphan", order_by="ServiceLine.source_row")
+
+
+class ServiceLine(Base):
+    __tablename__ = "service_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    service_calc_id: Mapped[int] = mapped_column(ForeignKey("service_calcs.id", ondelete="CASCADE"), index=True)
+    source_sheet: Mapped[str | None] = mapped_column(String(128))
+    source_row: Mapped[int | None] = mapped_column(Integer)
+    line_no: Mapped[str | None] = mapped_column(String(16))
+    description: Mapped[str | None] = mapped_column(String(255), index=True)
+    kind: Mapped[str | None] = mapped_column(String(32), index=True)   # personal | tag | unterkunft | reise | km | sonstiges
+    rate_domestic: Mapped[float | None] = mapped_column(Float)
+    rate_abroad: Mapped[float | None] = mapped_column(Float)
+    quantity: Mapped[float | None] = mapped_column(Float)
+    total: Mapped[float | None] = mapped_column(Float)
+
+    service_calc: Mapped[ServiceCalc] = relationship(back_populates="lines")

@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 98 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 100 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -235,3 +235,16 @@ VK, Lieferzeit … in wechselnder Spaltenfolge). Die leere Vorlage R06_01-2026 w
 - Dateien, aus denen das allgemeine Ersatzprofil keinen einzigen Kalkulationswert liest, werden nicht mehr
   als Schein-Positionen angelegt, sondern „ignoriert“ mit Prüfhinweis `vorlage_unbekannt`.
 - Migration 0007 (zusätzliche Spalten in `trade_items`). Geprüft an den drei Originaldateien.
+
+## 12. Serviceeinsätze (0.7.0)
+
+Ergebnis nach Neuimport „01 ab 2025“: profil_nicht_validiert 212 → 4, vorlage_unbekannt 40
+(davon 8 × Nachkalkulation NK-2905.11, ~13 Listen/Hilfsdateien, 7 Service/Montage, ~11 weitere Kalkulationen).
+
+Neues Profil `serviceeinsatz` (Vorlage „Serviceeinsatz / Kalkulation“, geprüft an DE-13511.26):
+Kunde, Benennung, Zeilen (Pos., Benennung, Satz Deutschland/Ausland, Anzahl, Gesamtkosten), „Gesamt“ und
+der angebotene Preis zwei Zeilen darunter. Tabellen `service_calcs`/`service_lines` (Migration 0008).
+Zeilenart automatisch: Personal, Tagessatz/Spesen, Unterkunft, Reise, Fahrkosten/km. „Ausland“, wenn der
+Betrag zum Auslandssatz passt. Anzeige: Angebotsansicht und *Materialpreise → Ansicht „Service“*
+(Sätze je Leistung mit min/Median/max/zuletzt, Einsätze mit Stunden, Tagen, Nächten, km, Preis).
+Offen: Montage-/Software-Kalkulationen (anderer Aufbau?) und ~11 Kalkulationen mit unbekanntem Aufbau.

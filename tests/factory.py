@@ -411,3 +411,29 @@ def make_trade_table_factor(path: Path, offer_slash: str = "DE-99922/26") -> Pat
     wb.save(path)
     set_cached_values(path, {"Tabelle1": cache})
     return path
+
+
+def make_service_calc(path: Path, offer_slash: str = "DE-99940/26", abroad: bool = False) -> Path:
+    """Aufbau wie "Serviceeinsatz / Kalkulation" (DE-13511.26), Werte erfunden."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Serviceeinsatz"
+    ws["A1"] = "Serviceeinsatz / Kalkulation "
+    ws["A2"], ws["C2"], ws["F2"] = "Kunde: Testkunde", "Benennung: Wartung", f"Angebot Nr. {offer_slash}"
+    for col, txt in zip("ABCDEG", ["Pos. ", "Benennung", "Deutschland", "Ausland", "Anzahl", "Gesamtkosten"]):
+        ws[f"{col}3"] = txt
+    rows = [("Service Experte", 140, 160, 8), ("Monteur", 112, 130, None), ("Kosten pro Tag", 85, 120, 1),
+            ("Unterkunft pro Nacht", 120, 150, None), ("Reisekosten", 80, 300, None), ("Fahrkosten pro km", 1.3, 1.3, 40)]
+    cache, total = {}, 0.0
+    for i, (name, de, aus, qty) in enumerate(rows, start=4):
+        ws[f"A{i}"], ws[f"B{i}"], ws[f"C{i}"], ws[f"D{i}"], ws[f"E{i}"] = i - 3, name, de, aus, qty
+        rate = aus if abroad else de
+        ws[f"G{i}"] = f"={'D' if abroad else 'C'}{i}*E{i}"
+        cache[f"G{i}"] = rate * (qty or 0)
+        total += cache[f"G{i}"]
+    ws["B11"], ws["G11"], ws["G13"] = "Gesamt:", "=SUM(G4:G9)", 1500
+    cache["G11"] = total
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    set_cached_values(path, {"Serviceeinsatz": cache})
+    return path

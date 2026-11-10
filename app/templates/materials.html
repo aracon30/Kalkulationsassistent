@@ -1,7 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Materialpreise – HETA{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Materialpreise <span class="hint">{% if f.ansicht == 'handelsware' %}{{ trade|length }} Handelswarenzeilen{% else %}{{ lines|length }} Bauteilzeilen{% endif %}</span></h1>
+<div class="page-head"><h1>Materialpreise <span class="hint">{% if f.ansicht == 'service' %}
+<p class="hint">Serviceeinsätze aus Kalkulationen der Vorlage „Serviceeinsatz / Kalkulation“. Suche nach Benennung, Kunde oder Angebotsnummer.</p>
+<section class="card"><h2>Sätze je Leistung</h2>
+<table class="table compact">
+  <tr><th>Art</th><th>Benennung</th><th>Spalte</th><th class="num">Anzahl</th><th class="num">min</th><th class="num">Median</th><th class="num">max</th><th>zuletzt</th></tr>
+  {% for r in service.rates %}<tr><td class="small">{{ r.kind }}</td><td>{{ r.description }}</td><td class="small">{{ r.column }}</td><td class="num">{{ r.n }}</td>
+    <td class="num">{{ r.min|de_num(2) }}</td><td class="num"><strong>{{ r.median|de_num(2) }}</strong></td><td class="num">{{ r.max|de_num(2) }}</td>
+    <td class="small nowrap">{{ r.latest|de_num(2) }} · <a href="/angebote/{{ r.latest_offer.id }}">{{ r.latest_offer.offer_number }}</a></td></tr>
+  {% else %}<tr><td colspan="8" class="muted">Keine Serviceeinsätze importiert (ggf. „Alle erneut importieren“).</td></tr>{% endfor %}
+</table></section>
+<section class="card"><h2>Einsätze</h2>
+<div class="table-wrap"><table class="table compact">
+  <tr><th>Angebot</th><th>Datum</th><th>Kunde</th><th>Leistung</th><th class="num">Personal [h]</th><th class="num">Tage</th><th class="num">Nächte</th><th class="num">km</th><th class="num">Kalkulation [€]</th><th class="num">Angebotspreis [€]</th></tr>
+  {% for s in service.calcs %}{% set c = s.calc %}<tr><td class="nowrap"><a href="/angebote/{{ c.offer.id }}">{{ c.offer.offer_number }}</a></td><td class="nowrap">{{ c.offer.offer_date|de_date }}</td>
+    <td>{{ c.offer.customer or '–' }}</td><td>{{ c.title or '–' }}{% if c.abroad %} <span class="badge info">Ausland</span>{% endif %}</td>
+    <td class="num">{{ s.personal_h|de_auto('') }}</td><td class="num">{{ s.days|de_auto('') }}</td><td class="num">{{ s.nights|de_auto('') }}</td><td class="num">{{ s.km|de_auto('') }}</td>
+    <td class="num">{{ c.total_cost|de_num(2) }}</td><td class="num">{{ c.offer_price|de_num(2) }}</td></tr>
+  {% endfor %}
+</table></div></section>
+{% elif f.ansicht == 'handelsware' %}{{ trade|length }} Handelswarenzeilen{% elif f.ansicht == 'service' %}{{ service.calcs|length }} Serviceeinsätze{% else %}{{ lines|length }} Bauteilzeilen{% endif %}</span></h1>
   <a class="btn" href="/material/{{ 'handelsware.csv' if f.ansicht == 'handelsware' else 'export.csv' }}?{{ query }}">CSV exportieren</a></div>
 <form class="filters" method="get">
   <input name="q" value="{{ f.q }}" placeholder="Benennung, Form, Abmaße, Norm">
@@ -11,14 +30,33 @@
   <input name="d_max" value="{{ f.d_max }}" placeholder="Ø bis [mm]" size="8">
   <input name="dn" value="{{ f.dn }}" placeholder="DN" size="5">
   <select name="jahr"><option value="">Jahr</option>{% for y in years %}<option {{ 'selected' if f.jahr == y|string }}>{{ y }}</option>{% endfor %}</select>
-  <select name="ansicht"><option value="gruppen" {{ 'selected' if f.ansicht == 'gruppen' }}>Preisspannen</option><option value="zeilen" {{ 'selected' if f.ansicht == 'zeilen' }}>Einzelzeilen</option><option value="handelsware" {{ 'selected' if f.ansicht == 'handelsware' }}>Handelsware (EK/VK)</option></select>
+  <select name="ansicht"><option value="gruppen" {{ 'selected' if f.ansicht == 'gruppen' }}>Preisspannen</option><option value="zeilen" {{ 'selected' if f.ansicht == 'zeilen' }}>Einzelzeilen</option><option value="handelsware" {{ 'selected' if f.ansicht == 'handelsware' }}>Handelsware (EK/VK)</option><option value="service" {{ 'selected' if f.ansicht == 'service' }}>Service (Sätze, Einsätze)</option></select>
   <label class="inline"><input type="checkbox" name="alle_versionen" value="true" {{ 'checked' if f.alle_versionen }}> ältere Kalkulationsversionen</label>
   <button class="btn" type="submit">Filtern</button> <a class="small" href="/material">zurücksetzen</a>
 </form>
 <p class="hint">Quelle: Materialauszüge der importierten Kalkulationen (Einzelpreis = Spalte „Einzelpreis Ø-Preis (Stck/m)“; €/m, wenn eine Länge angegeben ist).
   €/kg ist eine <strong>Schätzung</strong> aus Abmaßen und Dichte (Edelstahl 7,9 / Stahl 7,85 kg/dm³), nur für Rohre und Bleche.</p>
 
-{% if f.ansicht == 'handelsware' %}
+{% if f.ansicht == 'service' %}
+<p class="hint">Serviceeinsätze aus Kalkulationen der Vorlage „Serviceeinsatz / Kalkulation“. Suche nach Benennung, Kunde oder Angebotsnummer.</p>
+<section class="card"><h2>Sätze je Leistung</h2>
+<table class="table compact">
+  <tr><th>Art</th><th>Benennung</th><th>Spalte</th><th class="num">Anzahl</th><th class="num">min</th><th class="num">Median</th><th class="num">max</th><th>zuletzt</th></tr>
+  {% for r in service.rates %}<tr><td class="small">{{ r.kind }}</td><td>{{ r.description }}</td><td class="small">{{ r.column }}</td><td class="num">{{ r.n }}</td>
+    <td class="num">{{ r.min|de_num(2) }}</td><td class="num"><strong>{{ r.median|de_num(2) }}</strong></td><td class="num">{{ r.max|de_num(2) }}</td>
+    <td class="small nowrap">{{ r.latest|de_num(2) }} · <a href="/angebote/{{ r.latest_offer.id }}">{{ r.latest_offer.offer_number }}</a></td></tr>
+  {% else %}<tr><td colspan="8" class="muted">Keine Serviceeinsätze importiert (ggf. „Alle erneut importieren“).</td></tr>{% endfor %}
+</table></section>
+<section class="card"><h2>Einsätze</h2>
+<div class="table-wrap"><table class="table compact">
+  <tr><th>Angebot</th><th>Datum</th><th>Kunde</th><th>Leistung</th><th class="num">Personal [h]</th><th class="num">Tage</th><th class="num">Nächte</th><th class="num">km</th><th class="num">Kalkulation [€]</th><th class="num">Angebotspreis [€]</th></tr>
+  {% for s in service.calcs %}{% set c = s.calc %}<tr><td class="nowrap"><a href="/angebote/{{ c.offer.id }}">{{ c.offer.offer_number }}</a></td><td class="nowrap">{{ c.offer.offer_date|de_date }}</td>
+    <td>{{ c.offer.customer or '–' }}</td><td>{{ c.title or '–' }}{% if c.abroad %} <span class="badge info">Ausland</span>{% endif %}</td>
+    <td class="num">{{ s.personal_h|de_auto('') }}</td><td class="num">{{ s.days|de_auto('') }}</td><td class="num">{{ s.nights|de_auto('') }}</td><td class="num">{{ s.km|de_auto('') }}</td>
+    <td class="num">{{ c.total_cost|de_num(2) }}</td><td class="num">{{ c.offer_price|de_num(2) }}</td></tr>
+  {% endfor %}
+</table></div></section>
+{% elif f.ansicht == 'handelsware' %}
 <p class="hint">Handelsware aus den Blättern „Optionen“ der Kalkulationen: Einkaufspreis, Hebesätze und Verkaufspreis. Suchwörter müssen alle vorkommen (z. B. „kerze 100“).</p>
 <div class="table-wrap">
 <table class="table compact">

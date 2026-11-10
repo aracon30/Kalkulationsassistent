@@ -332,8 +332,8 @@ def _issue(session: Session, code: str, message: str, severity: str = "warnung",
 
 def _clear_document_data(session: Session, doc: Document) -> None:
     """Für erneuten (erzwungenen) Import: abgeleitete Daten dieses Dokuments entfernen."""
-    from app.models import MaterialLine, TradeItem
-    for model in (ExtractionValue, MaterialLine, TradeItem, ManufacturingOperation, Calculation):
+    from app.models import MaterialLine, ServiceCalc, TradeItem
+    for model in (ExtractionValue, MaterialLine, TradeItem, ServiceCalc, ManufacturingOperation, Calculation):
         for row in session.scalars(select(model).where(model.document_id == doc.id)):
             session.delete(row)
     for row in session.scalars(select(ReviewIssue).where(ReviewIssue.document_id == doc.id, ReviewIssue.status == "offen")):
@@ -356,9 +356,10 @@ def _reset_offer(session: Session, offer: Offer) -> None:
         session.delete(row)
     for d in session.scalars(select(Document).where(Document.offer_id == offer.id)):
         d.offer_item_id = None
-    from app.models import MaterialLine, TradeItem
-    for row in session.scalars(select(TradeItem).where(TradeItem.offer_id == offer.id)):
-        session.delete(row)
+    from app.models import MaterialLine, ServiceCalc, TradeItem
+    for model in (TradeItem, ServiceCalc):
+        for row in session.scalars(select(model).where(model.offer_id == offer.id)):
+            session.delete(row)
     item_ids = list(session.scalars(select(OfferItem.id).where(OfferItem.offer_id == offer.id)))
     if item_ids:
         for row in session.scalars(select(MaterialLine).where(MaterialLine.offer_item_id.in_(item_ids))):
@@ -446,7 +447,7 @@ def _apply_item_value(session: Session, offer: Offer, item: OfferItem, doc: Docu
 def _nothing_usable(ex: WorkbookExtraction) -> bool:
     """Unvalidiertes (generisches) Profil ohne einen einzigen Kalkulationswert und ohne Handelsware:
     Aufbau unbekannt – keine Schein-Positionen anlegen."""
-    if ex.profile_validated or ex.trade_lines:
+    if ex.profile_validated or ex.trade_lines or ex.service_lines:
         return False
     for fields in ex.positions.values():
         if any(e.group == "calculation" and e.value is not None for e in fields.values()):
@@ -499,6 +500,8 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
 
     if ex.trade_lines:
         _store_trade_items(session, offer, doc, ex.trade_lines)
+    if ex.service_lines:
+        _store_service(session, offer, doc, ex)
     for name, value in ex.constants.items():
         if name in OFFER_FIELDS and getattr(offer, name) is None:
             setattr(offer, name, value)  # Vorgabe der Vorlage (z. B. Währung), im Profil dokumentiert
@@ -676,6 +679,57 @@ def _store_trade_items(session: Session, offer: Offer, doc: Document, rows: list
             markup_factor=(vk / ek_unit) if (vk and ek_unit) else assembly["factor"], is_assembly=True,
             source_note="Verkaufspreis gilt für die Baugruppe (verbundene Zellen); EK = Summe der Einzelteile",
         ))
+    session.flush()
+
+
+SERVICE_KINDS = [
+    (r"experte|monteur|techniker|ingenieur|meister|helfer|stunde|personal|arbeitszeit", "personal"),
+    (r"unterkunft|hotel|(ü|ue)bernachtung|nacht", "unterkunft"),
+    (r"pro km|kilometer|\bkm\b|fahrkosten", "km"),
+    (r"reise|flug|bahn|anreise|fahrt", "reise"),
+    (r"pro tag|tagessatz|spesen|verpflegung|ausl(ö|oe)se", "tag"),
+]
+
+
+def service_kind(description: str | None) -> str:
+    t = (description or "").lower()
+    return next((k for rx, k in SERVICE_KINDS if re.search(rx, t)), "sonstiges")
+
+
+def _store_service(session: Session, offer: Offer, doc: Document, ex: WorkbookExtraction) -> None:
+    from app.models import ServiceCalc, ServiceLine
+
+    svc = ServiceCalc(offer_id=offer.id, document_id=doc.id,
+                      title=ex.header["project_name"].value if "project_name" in ex.header else None,
+                      total_cost=ex.service["total_cost"].value if "total_cost" in ex.service else None,
+                      offer_price=ex.service["offer_price"].value if "offer_price" in ex.service else None)
+    session.add(svc)
+    session.flush()
+    total = 0.0
+    abroad = False
+    for r in ex.service_lines:
+        nums = {k: _to_float(r.get(k)) for k in ("rate_domestic", "rate_abroad", "quantity", "total")}
+        desc = str(r.get("description") or "").strip()
+        if not desc or all(v is None for v in nums.values()):
+            continue
+        q, t = nums["quantity"], nums["total"]
+        if q and t is not None and nums["rate_abroad"] is not None:
+            # Ausland nur, wenn der Betrag zum Auslandssatz passt (nicht zum Inlandssatz)
+            fits_abroad = abs(nums["rate_abroad"] * q - t) < 0.01
+            fits_domestic = nums["rate_domestic"] is not None and abs(nums["rate_domestic"] * q - t) < 0.01
+            abroad = abroad or (fits_abroad and not fits_domestic)
+        session.add(ServiceLine(service_calc_id=svc.id, source_sheet=r["_sheet"], source_row=r["_row"],
+                                line_no=None if r.get("line_no") is None else str(r["line_no"])[:16], description=desc[:255],
+                                kind=service_kind(desc), rate_domestic=nums["rate_domestic"], rate_abroad=nums["rate_abroad"],
+                                quantity=nums["quantity"], total=nums["total"]))
+        total += nums["total"] or 0.0
+    svc.abroad = abroad
+    if svc.total_cost is None:
+        svc.total_cost = total
+    elif abs(svc.total_cost - total) > 0.5:
+        _issue(session, "summe_abweichend", f"{doc.file_name}: Summe der Servicezeilen {total:,.2f} € ≠ Gesamt {svc.total_cost:,.2f} €", "warnung", offer=offer, document=doc)
+    if svc.offer_price is None:
+        _issue(session, "preis_fehlt", f"{doc.file_name}: kein Angebotspreis unter „Gesamt“ gefunden – Summe {svc.total_cost:,.2f} € verwenden?", "info", offer=offer, document=doc)
     session.flush()
 
 

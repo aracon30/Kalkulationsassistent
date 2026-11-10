@@ -453,3 +453,24 @@ def test_unknown_layout_is_not_imported_as_fake_positions(db, env):
     assert doc.import_status == ImportStatus.IGNORIERT and "nicht erkannt" in doc.import_message
     assert db.scalar(select(func.count(OfferItem.id))) == 0
     assert db.scalars(select(ReviewIssue).where(ReviewIssue.code == "vorlage_unbekannt")).first()
+
+
+def test_service_calculation(db, env):
+    from app.models import Document, ServiceCalc
+    from tests.factory import make_service_calc
+    make_service_calc(env / "S" / "DE-99940.26" / "DE-99940.26_Kalkulation Service 2026.xlsx")
+    scan_and_inventory(db, str(env / "S"))
+    run_import(db)
+    doc = db.scalars(select(Document)).one()
+    assert doc.profile_id == "serviceeinsatz" and doc.import_status == ImportStatus.IMPORTIERT
+    svc = db.scalars(select(ServiceCalc)).one()
+    assert (svc.title, svc.total_cost, svc.offer_price, svc.abroad) == ("Wartung", 140 * 8 + 85 + 1.3 * 40, 1500, False)
+    assert svc.offer.customer == "Testkunde"
+    kinds = {l.description: l.kind for l in svc.lines}
+    assert kinds == {"Service Experte": "personal", "Monteur": "personal", "Kosten pro Tag": "tag", "Unterkunft pro Nacht": "unterkunft",
+                     "Reisekosten": "reise", "Fahrkosten pro km": "km"}
+    expert = next(l for l in svc.lines if l.description == "Service Experte")
+    assert (expert.rate_domestic, expert.rate_abroad, expert.quantity, expert.total) == (140, 160, 8, 1120)
+    assert db.scalar(select(func.count(OfferItem.id))) == 0
+    run_import(db, force=True)
+    assert db.scalar(select(func.count(ServiceCalc.id))) == 1

@@ -154,3 +154,15 @@ def test_unexpected_error_shows_german_page(env, monkeypatch):
     with TestClient(create_app(), raise_server_exceptions=False) as c:
         r = c.get("/")
     assert r.status_code == 500 and "ZeroDivisionError" in r.text and "app.log" in r.text
+
+
+def test_service_view_and_offer_page(client, env):
+    from tests.factory import make_service_calc
+    from app.services.jobs import manager
+    make_service_calc(env / "SV" / "DE-99941.26" / "DE-99941.26_Kalkulation Service.xlsx", "DE-99941/26", abroad=True)
+    manager.start("scan", str(env / "SV"), wait=True)
+    manager.start("import", None, wait=True)
+    r = client.get("/material?ansicht=service")
+    assert r.status_code == 200 and "Service Experte" in r.text and "Ausland" in r.text and "DE-99941.26" in r.text
+    r = client.get("/angebote/1")
+    assert "Serviceeinsatz" in r.text and "Wartung" in r.text
