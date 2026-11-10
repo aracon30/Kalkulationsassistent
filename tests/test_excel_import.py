@@ -1,4 +1,7 @@
 import pytest
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
 from app.config import get_settings
 from app.services.excel_importer import ProfileError, extract_workbook, load_profiles
@@ -134,3 +137,36 @@ def test_optional_recalculation_only_on_copy(tmp_path):
     finally:
         if out:
             shutil.rmtree(out.parent.parent, ignore_errors=True)
+
+
+def test_text_fields_do_not_take_neighbouring_labels(profiles, tmp_path):
+    import openpyxl
+    p = tmp_path / "SE-99901.26_Kalkulation.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Behälter"
+    ws.append(["Kunde", "Angebot Nr:", "SE-99901.26"])           # Kunde leer, rechts folgt nächste Beschriftung
+    ws.append(["Typ", "Material", "Werkstoff", "Menge"])          # Tabellenkopf, keine Werte
+    ws.append(["Materialkosten", 1200])
+    ws.append(["Angebotspreis", 5000])
+    wb.save(p)
+    ex = extract_workbook(p, profiles, "angebotskalkulation")
+    assert "customer" not in ex.header
+    f = ex.positions[1]
+    assert "product_type" not in f and "material" not in f
+    assert f["material_cost"].value == 1200 and f["offer_price"].value == 5000
+
+
+def test_structure_export_hides_values(env, tmp_path, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("struktur_export", ROOT_DIR / "scripts" / "struktur_export.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    path = make_kalkulation(tmp_path / "SE-99901.26_Kalkulation.xlsx")
+    before = path.read_bytes()
+    out = mod.export(path, hide=True)
+    text = out.read_text(encoding="utf-8")
+    assert "Formel  =B31+C32  = <Zahl>" in text and "'Materialkosten'" in text
+    assert "8000" not in text and "Ergebnis des aktuellen Importprofils" in text
+    assert path.read_bytes() == before

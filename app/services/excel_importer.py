@@ -271,6 +271,27 @@ class Extractor:
         skip = profile.positions.skip_sheet_regex
         self.sheets = [s for s in wb.sheetnames if not (skip and re.search(skip, s))] or wb.sheetnames
         self._text_cache: dict[str, list[tuple[int, int, str, str]]] = {s: list(wb.iter_text_cells(s)) for s in wb.sheetnames}
+        # Alle bekannten Beschriftungen: ein Textwert, der selbst eine Beschriftung ist, ist kein Wert
+        self._known_labels = {normalize_label(l) for group in (profile.header_fields, profile.item_fields, profile.calculation_fields, profile.operations)
+                              for spec in group.values() for l in spec.labels}
+
+        # Tabellenkopfzeilen: ≥ 3 bekannte Beschriftungen in einer Zeile -> Werte stehen darunter, nicht rechts
+        self._header_rows: dict[str, set[int]] = {}
+        for sheet, cells in self._text_cache.items():
+            per_row: dict[int, int] = {}
+            for row, _, _, norm in cells:
+                if norm in self._known_labels:
+                    per_row[row] = per_row.get(row, 0) + 1
+            self._header_rows[sheet] = {r for r, n in per_row.items() if n >= 3}
+
+    def _looks_like_label(self, val) -> bool:
+        if not isinstance(val, str):
+            return False
+        text = val.strip()
+        if text.endswith(":") or text.endswith("："):
+            return True
+        norm = normalize_label(text)
+        return norm in self._known_labels or any(norm.startswith(l + " ") for l in self._known_labels if len(l) > 3)
 
     # Werte neben/unter einer Beschriftung suchen
     def _scan_value(self, sheet: str, row: int, col: int, spec: FieldSpec) -> tuple[CellInfo | None, str | None]:
@@ -298,9 +319,11 @@ class Extractor:
                         return info, unit
                     if parse_number(val) is not None:
                         return info, unit
-                    if isinstance(val, str) and len(val.strip()) > 12:
+                    if isinstance(val, str) and (len(val.strip()) > 12 or self._looks_like_label(val)):
                         break  # vermutlich nächste Beschriftung
                     continue
+                if self._looks_like_label(val):
+                    break  # Textfeld: rechts steht die nächste Beschriftung, kein Wert
                 return info, unit
         return None, None
 
@@ -330,6 +353,8 @@ class Extractor:
                             break
                         unit = None
                     else:
+                        if spec.direction == "right" and row in self._header_rows.get(sheet, ()):
+                            break  # Tabellenkopf: rechts stehen weitere Spaltenüberschriften
                         info, unit = self._scan_value(sheet, row, col, spec)
                         if info is None:
                             break
