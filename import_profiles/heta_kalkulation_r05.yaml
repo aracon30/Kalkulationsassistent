@@ -78,6 +78,10 @@ calculation_fields:
   offer_price: {labels: [gewählt], value_column: O, type: number, unit: EUR}
   calculation_date: {labels: [Datum], inline: true, type: date}
 
+# Feste Angaben der Vorlage: alle Beträge sind in der Vorlage als € formatiert
+header_constants:
+  currency: EUR
+
 # Ersatzwerte, wenn ein Feld in der Datei fehlt (immer Prüfbedarf)
 calculation_fallbacks:
   offer_price: calculated_price

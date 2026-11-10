@@ -341,3 +341,22 @@ def test_heta_r05_validated_profile_gives_verified_values(db, env):
     total = db.scalars(select(ExtractionValue).where(ExtractionValue.field_name == "total_cost")).first()
     assert price.validation_status == ValStatus.VERIFIZIERT and total.validation_status == ValStatus.VERIFIZIERT
     assert not db.scalars(select(ReviewIssue).where(ReviewIssue.code.in_(["formel_cache_abweichung", "profil_nicht_validiert"]))).all()
+
+
+def test_heta_r05_validated_offer_is_verified_despite_info_hints(db, env):
+    from tests.factory import make_heta_fertigungszeit, make_heta_r05_kalkulation, make_offer_pdf
+    folder = env / "K5" / "SE-99905.26-X"
+    make_heta_r05_kalkulation(folder / "SE-99905.26_Kalkulation.xlsx", "SE-99905/26")
+    make_heta_fertigungszeit(folder / "SE-99905.26_Fertigungszeit.xlsx", "SE-99905/26")
+    make_offer_pdf(folder / "SE-99905.26.pdf", "SE-99905.26")
+    import pymupdf
+    scan = pymupdf.open(); scan.new_page(); scan.save(str(folder / "KF-9-301.11-005.pdf")); scan.close()  # Zeichnung ohne Text
+    scan_and_inventory(db, str(env / "K5"))
+    run_import(db)
+    offer = db.scalars(select(Offer)).one()
+    assert offer.currency == "EUR" and offer.items[0].current_calculation.currency == "EUR"
+    open_issues = db.scalars(select(ReviewIssue).where(ReviewIssue.status == "offen")).all()
+    assert open_issues and all(i.severity == "info" for i in open_issues), [(i.code, i.message) for i in open_issues]
+    assert [i.validation_status for i in offer.items] == [ValStatus.VERIFIZIERT] * 2
+    assert all(i.current_calculation.validation_status == ValStatus.VERIFIZIERT for i in offer.items)
+    assert offer.validation_status == ValStatus.VERIFIZIERT

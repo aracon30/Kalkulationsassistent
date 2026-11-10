@@ -85,6 +85,7 @@ class ImportProfile(BaseModel):
     operations: dict[str, FieldSpec] = Field(default_factory=dict)
     operations_table: OperationsTable | None = None
     calculation_fallbacks: dict[str, str] = Field(default_factory=dict)  # Zielfeld -> Ersatzfeld
+    header_constants: dict[str, str] = Field(default_factory=dict)       # feste Kopfwerte der Vorlage, z. B. currency: EUR
     source_file: str | None = None
 
     @property
@@ -231,6 +232,7 @@ class WorkbookExtraction:
     issues: list[Issue] = field(default_factory=list)
     application: str | None = None
     fallbacks: dict[str, str] = field(default_factory=dict)
+    constants: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -446,7 +448,8 @@ class Extractor:
         info = best.cell
         assert info is not None
         issues: list[Issue] = []
-        confidence = {3: 0.95, 2: 0.9, 1: 0.8}.get(best.rank[0], 0.8)
+        # 3 feste Zelle, 2 exakte Beschriftung/Muster, 1 Beschriftung mit Zusatztext (eindeutig, Profil gewollt)
+        confidence = {3: 0.95, 2: 0.9, 1: 0.85}.get(best.rank[0], 0.85)
         same_rank = same_rank or [best]
         distinct = {repr(self._cand_value(c)) for c in same_rank}
         if len(distinct) > 1:
@@ -573,7 +576,7 @@ class Extractor:
                 mode = "single"
 
         result = WorkbookExtraction(prof.id, prof.profile.validated, profile_reason, mode, application=self.wb.application,
-                                    fallbacks=dict(prof.calculation_fallbacks))
+                                    fallbacks=dict(prof.calculation_fallbacks), constants=dict(prof.header_constants))
         for name, spec in prof.header_fields.items():
             ex = self.extract_field(name, "header", spec, self.wb.sheetnames, None)  # Kopf: alle Blätter (auch Deckblatt)
             if ex:

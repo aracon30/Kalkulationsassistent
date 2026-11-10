@@ -477,6 +477,9 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
             elif validation.values_conflict(current, e.value):
                 _issue(session, "widerspruch", f"Angebotskopf: {name} widersprüchlich – '{current}' vs. '{e.value}' ({doc.file_name})", "warnung", offer=offer, document=doc, value=ev)
 
+    for name, value in ex.constants.items():
+        if name in OFFER_FIELDS and getattr(offer, name) is None:
+            setattr(offer, name, value)  # Vorgabe der Vorlage (z. B. Währung), im Profil dokumentiert
     if len(ex.positions) > 1:
         notes.append(f"{len(ex.positions)} Positionen erkannt ({ex.position_mode})")
 
@@ -739,12 +742,14 @@ def _update_validation_status(session: Session, offer: Offer) -> None:
     session.flush()
     any_open = False
     for item in session.scalars(select(OfferItem).where(OfferItem.offer_id == offer.id)):
-        open_issues = session.scalars(select(ReviewIssue.id).where(ReviewIssue.offer_item_id == item.id, ReviewIssue.status == "offen")).first()
+        open_issues = session.scalars(select(ReviewIssue.id).where(ReviewIssue.offer_item_id == item.id, ReviewIssue.status == "offen",
+                                                                    ReviewIssue.severity != "info")).first()
         vals = list(session.scalars(select(ExtractionValue.validation_status).where(ExtractionValue.offer_item_id == item.id, ExtractionValue.target_entity == "offer_item")))
         item.validation_status = ValStatus.VERIFIZIERT if vals and not open_issues and all(v == ValStatus.VERIFIZIERT for v in vals) else ValStatus.PRUEFBEDARF
         for calc in item.calculations:
             cvals = list(session.scalars(select(ExtractionValue.validation_status).where(ExtractionValue.calculation_id == calc.id)))
             calc.validation_status = ValStatus.VERIFIZIERT if cvals and not open_issues and all(v == ValStatus.VERIFIZIERT for v in cvals) else ValStatus.PRUEFBEDARF
         any_open = any_open or bool(open_issues) or item.validation_status != ValStatus.VERIFIZIERT
-    offer_open = session.scalars(select(ReviewIssue.id).where(ReviewIssue.offer_id == offer.id, ReviewIssue.status == "offen")).first()
+    offer_open = session.scalars(select(ReviewIssue.id).where(ReviewIssue.offer_id == offer.id, ReviewIssue.status == "offen",
+                                                              ReviewIssue.severity != "info")).first()
     offer.validation_status = ValStatus.PRUEFBEDARF if (any_open or offer_open) else ValStatus.VERIFIZIERT

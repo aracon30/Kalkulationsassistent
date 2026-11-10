@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 88 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 89 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -159,3 +159,6 @@ Festlegungen im Profil (Stand 10.11.2026):
 - Die Profile `heta_kalkulation_r05` und `heta_fertigungszeit` sind auf `validated: true` gesetzt.
   Werte können damit „Verifiziert“ werden, wenn sie eindeutig sind und alle Regeln bestehen;
   Mehrdeutiges, Ersatzwerte und Widersprüche bleiben im Prüfcenter. Zurücksetzen: `validated: false`.
+- Info-Hinweise (z. B. „Zeichnung ohne Textebene“, „Vorlagenkopie ignoriert“) bleiben im Prüfcenter
+  sichtbar, verhindern aber nicht die Freigabe; nur Warnungen und Fehler halten den Status auf „Prüfbedarf“.
+- Währung der Vorlage R05: EUR (alle Beträge sind dort als € formatiert).
