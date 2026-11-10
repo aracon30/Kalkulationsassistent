@@ -340,6 +340,31 @@ def _clear_document_data(session: Session, doc: Document) -> None:
     session.flush()
 
 
+def _reset_offer(session: Session, offer: Offer) -> None:
+    """Erzwungener Neuimport: alle aus Dateien abgeleiteten Daten des Angebots verwerfen und neu aufbauen.
+
+    Sonst blieben Werte eines früheren (falschen) Profils in Positionen und Angebotskopf stehen und die
+    korrekten neuen Werte würden nur als Widerspruch gemeldet. Das Prüfprotokoll (Korrekturen) bleibt erhalten,
+    ebenso der manuell gesetzte Angebotsstatus.
+    """
+    doc_ids = list(session.scalars(select(Document.id).where(Document.offer_id == offer.id)))
+    if doc_ids:
+        for row in session.scalars(select(ExtractionValue).where(ExtractionValue.document_id.in_(doc_ids))):
+            session.delete(row)
+    for row in session.scalars(select(ReviewIssue).where(ReviewIssue.offer_id == offer.id, ReviewIssue.status == "offen")):
+        session.delete(row)
+    for d in session.scalars(select(Document).where(Document.offer_id == offer.id)):
+        d.offer_item_id = None
+    for item in session.scalars(select(OfferItem).where(OfferItem.offer_id == offer.id)).all():
+        session.delete(item)  # mit Kalkulationen und Arbeitsgängen
+    for f in OFFER_FIELDS:
+        if f != "status":
+            setattr(offer, f, None)
+    offer.validation_status = ValStatus.PRUEFBEDARF
+    session.flush()
+    session.expire(offer, ["items"])
+
+
 def _get_or_create_offer(session: Session, offer_number: str) -> Offer:
     offer = session.scalars(select(Offer).where(Offer.offer_number == offer_number)).first()
     if offer is None:
@@ -614,6 +639,8 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
     """Importiert alle Dokumente eines Angebots. Der Aufrufer committet oder rollt zurück."""
     stats = {"imported": 0, "failed": 0, "log": []}
     offer = _get_or_create_offer(session, offer_number)
+    if force:
+        _reset_offer(session, offer)
     order = {DocType.KALKULATION: 0, DocType.FERTIGUNGSZEIT: 1, DocType.ZEICHNUNG: 2}
     docs = sorted(docs, key=lambda d: (order.get(d.document_type, 9), d.modified_at or datetime.min, d.file_path))
     kalk_docs: list[Document] = []

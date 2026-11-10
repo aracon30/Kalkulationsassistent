@@ -294,3 +294,21 @@ def test_heta_r05_template_end_to_end(db, env):
     tpl = db.scalars(select(Document).where(Document.file_name == "Kalkulation R06_01-2026.xlsx")).one()
     assert tpl.import_status == ImportStatus.IGNORIERT and "vorlage" in tpl.import_message.lower()
     assert "vorlage_ignoriert" in codes
+
+
+def test_forced_reimport_replaces_values_from_earlier_wrong_profile(db, offer_base):
+    """Erst falsch importiert (z. B. altes Profil), dann 'Alle erneut importieren' -> saubere Neuwerte, keine Widersprüche."""
+    _full_import(db, offer_base)
+    offer = db.scalars(select(Offer)).one()
+    offer.customer = "Angebot Nr:"
+    item = offer.items[0]
+    item.product_type, item.material = "Material", "APZ Kosten"
+    db.add(OfferItem(offer_id=offer.id, position_number=7, product_type="Geisterposition"))
+    db.commit()
+    run_import(db, force=True)
+    db.expire_all()
+    offer = db.scalars(select(Offer)).one()
+    assert offer.customer == "Testkunde Chemie GmbH"
+    assert [(i.position_number, i.product_type, i.material) for i in offer.items] == [(1, "Kerzenfilter", "1.4404"), (2, "Beutelfilter", "1.4404")]
+    assert not db.scalars(select(ReviewIssue).where(ReviewIssue.code == "widerspruch")).all()
+    assert db.scalar(select(func.count(Calculation.id))) == 2
