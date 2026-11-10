@@ -44,6 +44,18 @@ ITEM_FIELDS = ["position_number", "product_type", "description", "drawing_number
                "design_temperature_min", "design_temperature_max", "material", "diameter", "wall_thickness", "height",
                "volume", "filter_elements", "filter_area", "design_code", "weight", "quantity"]
 OFFER_FIELDS = ["customer", "project_name", "offer_date", "country", "industry", "status", "currency", "revision"]
+HETA_DRAWING_CODE_RE = re.compile(r"(?<![A-Za-z])(?P<prefix>[A-Za-z]{1,4})-\d-(?P<size>\d{2,4})\.\d{2}-\d{3}")
+
+
+def _code_family(text) -> str | None:
+    """Regelwerk-Familie; Richtlinien (DGRL/PED) sind kein Berechnungsregelwerk und werden nicht verglichen."""
+    t = re.sub(r"[\s.\-]", "", str(text or "")).upper()
+    for key, fam in (("AD2000", "AD 2000"), ("EN13445", "EN 13445"), ("ASME", "ASME VIII"), ("EN13480", "EN 13480")):
+        if key in t:
+            return fam
+    return None
+
+
 PDF_CROSSCHECK = ["drawing_number", "product_type", "dn", "design_pressure", "design_temperature_min", "design_temperature_max",
                   "material", "design_code", "filter_area", "filter_elements"]
 
@@ -436,7 +448,14 @@ def _store_value(session: Session, doc: Document, ex: Extracted, *, profile_vali
     return ev
 
 
-def _apply_item_value(session: Session, offer: Offer, item: OfferItem, doc: Document, field: str, value, ev: ExtractionValue) -> None:
+def _manually_corrected(session: Session, entity: str, entity_id: int, field: str) -> bool:
+    from app.models import Correction
+    return session.scalar(select(Correction.id).where(Correction.entity == entity, Correction.entity_id == entity_id,
+                                                      Correction.field_name == field, Correction.action == "korrektur").limit(1)) is not None
+
+
+def _apply_item_value(session: Session, offer: Offer, item: OfferItem, doc: Document, field: str, value, ev: ExtractionValue,
+                      supersede: bool = False) -> None:
     if field == "material" and value is not None:
         norm, ok = normalize_material(value)
         item.material_raw = str(value)
@@ -450,6 +469,10 @@ def _apply_item_value(session: Session, offer: Offer, item: OfferItem, doc: Docu
             _issue(session, "produkttyp_unbekannt", f"Produkttyp '{value}' ist nicht in der Typenliste ({doc.file_name})", "info", item=item, document=doc, value=ev)
         value = norm
     current = getattr(item, field)
+    if current is not None and validation.values_conflict(current, value) and supersede and not _manually_corrected(session, "offer_item", item.id, field):
+        setattr(item, field, value)
+        ev.validation_message = "; ".join(filter(None, [ev.validation_message, f"ersetzt '{current}' aus älterer Kalkulationsversion"]))
+        return
     if current is not None and validation.values_conflict(current, value):
         ev.validation_status = ValStatus.PRUEFBEDARF
         _issue(session, "widerspruch", f"Pos. {item.position_number}: {field} widersprüchlich – bisher '{current}', {doc.file_name} liefert '{value}'",
@@ -457,6 +480,23 @@ def _apply_item_value(session: Session, offer: Offer, item: OfferItem, doc: Docu
         return
     if current is None:
         setattr(item, field, value)
+
+
+def _drop_implausible_wall(fields: dict) -> None:
+    """'Ø 114,3 x 400' – die zweite Zahl ist dann die Länge, keine Wandstärke (Wand > Ø/4 ist unmöglich)."""
+    w, d = fields.get("wall_thickness"), fields.get("diameter")
+    if w is None or w.value is None or not isinstance(w.value, (int, float)):
+        return
+    if (d is not None and isinstance(d.value, (int, float)) and d.value > 0 and w.value > d.value / 4) or w.value > 200:
+        w.value = None
+        w.method = "verworfen"
+
+
+def _same_number(text: str, offer_number: str) -> bool:
+    """'13533/26' oder 'DE.-13423/25' bezeichnen dasselbe Angebot wie PT-13533.26 bzw. DE-13423.25."""
+    m = re.search(r"(\d{5})\D{1,3}(\d{2})(?!\d)", text)
+    n = re.search(r"(\d{5})\D(\d{2})", offer_number)
+    return bool(m and n and m.groups() == n.groups())
 
 
 def _nothing_usable(ex: WorkbookExtraction) -> bool:
@@ -489,6 +529,8 @@ def _reset_from_old_versions(session: Session, doc: Document) -> None:
 
 def _import_workbook(session: Session, offer: Offer, doc: Document, ex: WorkbookExtraction, kind: str) -> list[str]:
     notes: list[str] = []
+    # Kalkulationen werden nach Revision sortiert importiert: spätere Version ersetzt Werte früherer Versionen
+    supersede = kind == DocType.KALKULATION
     _reset_from_old_versions(session, doc)
     doc.profile_id = ex.profile_id
     if not ex.profile_validated:
@@ -502,7 +544,7 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
         ev = _store_value(session, doc, e, profile_validated=ex.profile_validated, target="offer")
         if name == "offer_number":
             found = [n for n, _ in find_offer_numbers(str(e.value or ""))]
-            if e.value and offer.offer_number not in found:
+            if e.value and offer.offer_number not in found and not _same_number(str(e.value), offer.offer_number):
                 ev.validation_status = ValStatus.PRUEFBEDARF
                 _issue(session, "angebotsnummer_abweichend", f"{doc.file_name}: Angebotsnummer in der Datei ('{e.value}') weicht von Ordner/Dateiname ({offer.offer_number}) ab", "warnung", offer=offer, document=doc, value=ev)
             continue
@@ -510,6 +552,9 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
             current = getattr(offer, name)
             if current is None:
                 setattr(offer, name, e.value)
+            elif validation.values_conflict(current, e.value) and supersede and not _manually_corrected(session, "offer", offer.id, name):
+                setattr(offer, name, e.value)
+                ev.validation_message = "; ".join(filter(None, [ev.validation_message, f"ersetzt '{current}' aus älterer Kalkulationsversion"]))
             elif validation.values_conflict(current, e.value):
                 _issue(session, "widerspruch", f"Angebotskopf: {name} widersprüchlich – '{current}' vs. '{e.value}' ({doc.file_name})", "warnung", offer=offer, document=doc, value=ev)
 
@@ -529,6 +574,7 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
         rev_index = int(rev_label) if rev_label.isdigit() else None
 
     for pos, fields in sorted(ex.positions.items()):
+        _drop_implausible_wall(fields)
         item = _get_or_create_item(session, offer, pos)
         if kind == DocType.KALKULATION and doc.offer_item_id is None and len(ex.positions) == 1:
             doc.offer_item_id = item.id
@@ -547,11 +593,11 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
                     for fname, v in (("design_temperature_min", lo), ("design_temperature_max", hi)):
                         if v is not None:
                             ev = _store_value(session, doc, e, profile_validated=ex.profile_validated, item=item, target="offer_item", field_name=fname, value=v)
-                            _apply_item_value(session, offer, item, doc, fname, v, ev)
+                            _apply_item_value(session, offer, item, doc, fname, v, ev, supersede)
                     continue
                 ev = _store_value(session, doc, e, profile_validated=ex.profile_validated, item=item, target="offer_item")
                 if e.value is not None:
-                    _apply_item_value(session, offer, item, doc, name, e.value, ev)
+                    _apply_item_value(session, offer, item, doc, name, e.value, ev, supersede)
             elif e.group == "calculation" and calc is not None:
                 ev = _store_value(session, doc, e, profile_validated=ex.profile_validated, item=item, calc=calc, target="calculation")
                 if e.value is not None:
@@ -627,7 +673,8 @@ def _store_material_lines(session: Session, item: OfferItem, calc: Calculation, 
                    "warnung", item=item, document=doc)
     session.flush()
     expected = calc.material_cost * (item.quantity or 1) if calc.material_cost is not None else None
-    if expected is not None and n_total and abs(total - expected) > max(1.0, 0.01 * expected):
+    variants = [] if calc.material_cost is None else [calc.material_cost * (item.quantity or 1), calc.material_cost]
+    if expected is not None and n_total and all(abs(total - v) > max(1.0, 0.01 * v) for v in variants):
         _issue(session, "summe_abweichend", f"Pos. {item.position_number}: Summe Materialauszug {total:,.2f} € ≠ Material Gesamtkosten {expected:,.2f} € ({doc.file_name})",
                "warnung", item=item, document=doc)
 
@@ -816,6 +863,16 @@ def _assign_drawing(session: Session, offer: Offer, doc: Document, pdf: PdfExtra
             return matching[0], f"Zuordnung über Produkttyp '{hint}' (wahrscheinlich)"
     if len(items) == 1:
         return items[0], "Einzige Position des Angebots (wahrscheinlich)"
+    # HETA-Zeichnungsnummer "KFW-3-201.14-002": Baugröße 201 ≈ DN 200 (auch mit Präfix "513-F066_…")
+    code = HETA_DRAWING_CODE_RE.search(doc.file_name)
+    if code:
+        size = int(code.group("size"))
+        by_dn = [it for it in items if it.dn and 0 <= size - it.dn <= 15]
+        hint = PRODUCT_PREFIXES.get(code.group("prefix").upper())
+        if hint and len([it for it in by_dn if it.product_type == hint]) == 1:
+            by_dn = [it for it in by_dn if it.product_type == hint]
+        if len(by_dn) == 1:
+            return by_dn[0], f"Zuordnung über Baugröße {size} in der Zeichnungsnummer ≈ DN {by_dn[0].dn:g} (wahrscheinlich)"
     return None, "Keine eindeutige Position gefunden"
 
 
@@ -826,11 +883,14 @@ def _import_drawing(session: Session, offer: Offer, doc: Document, pdf: PdfExtra
         _issue(session, "pdf_ohne_text", f"{doc.file_name}: {msg}", "info", offer=offer, document=doc)
     item, reason = _assign_drawing(session, offer, doc, pdf)
     if item is None:
-        _issue(session, "zeichnung_nicht_zugeordnet", f"{doc.file_name}: Zeichnung keiner Angebotsposition eindeutig zuordenbar", "warnung", offer=offer, document=doc)
+        _issue(session, "zeichnung_nicht_zugeordnet", f"{doc.file_name}: keiner Angebotsposition eindeutig zuordenbar – bleibt beim Angebot", "info", offer=offer, document=doc)
     else:
         doc.offer_item_id = item.id
         if "wahrscheinlich" in reason:
             _issue(session, "zuordnung_unsicher", f"{doc.file_name} → Pos. {item.position_number}: {reason}", "info", item=item, document=doc)
+    by_field: dict[str, list] = defaultdict(list)
+    for v in pdf.values:
+        by_field[v.field_name].append(v)
     for v in pdf.values:
         ev = ExtractionValue(
             document_id=doc.id, offer_item_id=item.id if item else None, target_entity="offer_item", field_name=v.field_name,
@@ -844,19 +904,28 @@ def _import_drawing(session: Session, offer: Offer, doc: Document, pdf: PdfExtra
         if item is None or v.field_name not in PDF_CROSSCHECK:
             continue
         current = getattr(item, v.field_name)
-        if current is None:
-            setattr(item, v.field_name, v.value)
-            ev.validation_message += "; in Position übernommen (keine Angabe in Kalkulation)"
-        elif validation.values_conflict(current, v.value):
-            _issue(session, "widerspruch", f"Pos. {item.position_number}: {v.field_name} in Zeichnung {doc.file_name} ('{v.value}', S. {v.page}) ≠ Kalkulation ('{current}')",
-                   "warnung", item=item, document=doc, value=ev)
+        same = by_field[v.field_name]
+        if v.field_name == "design_code":
+            conflict = lambda a, b: _code_family(a) is not None and _code_family(b) is not None and _code_family(a) != _code_family(b)  # noqa: E731
         else:
+            conflict = validation.values_conflict
+        if current is None:
+            if len({str(x.value) for x in same}) == 1:
+                setattr(item, v.field_name, v.value)
+                ev.validation_message += "; in Position übernommen (keine Angabe in Kalkulation)"
+        elif not conflict(current, v.value):
             ev.validation_message += "; bestätigt durch Kalkulation"
             confirmed = session.scalars(select(ExtractionValue).where(
                 ExtractionValue.offer_item_id == item.id, ExtractionValue.field_name == v.field_name,
                 ExtractionValue.extraction_method.like("profil%"), ExtractionValue.validation_status == ValStatus.VERIFIZIERT)).first()
             if confirmed:
                 ev.validation_status = ValStatus.VERIFIZIERT
+        elif any(not conflict(current, x.value) for x in same) or len({str(x.value) for x in same}) > 1:
+            # Dokument nennt mehrere Werte (Datenblatt, Stückliste) – kein eindeutiger Widerspruch
+            ev.validation_message += "; mehrere Angaben im Dokument – nicht mit Kalkulation verglichen"
+        else:
+            _issue(session, "widerspruch", f"Pos. {item.position_number}: {v.field_name} in Zeichnung {doc.file_name} ('{v.value}', S. {v.page}) ≠ Kalkulation ('{current}')",
+                   "warnung", item=item, document=doc, value=ev)
     return [reason]
 
 
@@ -896,7 +965,7 @@ _DOC_ORDER = {DocType.KALKULATION: 0, DocType.FERTIGUNGSZEIT: 1, DocType.ZEICHNU
 
 
 def _doc_order(d: Document):
-    return (_DOC_ORDER.get(d.document_type, 9), d.modified_at or datetime.min, d.file_path)
+    return (_DOC_ORDER.get(d.document_type, 9), detect_revision(d.file_name)[1] or 0, d.modified_at or datetime.min, d.file_path)
 
 
 def _read(prefetch: Prefetcher | None, doc: Document, fallback):
@@ -995,8 +1064,11 @@ def _update_current_calculations(session: Session, offer: Offer) -> None:
         calcs[-1].is_current = True
         distinct_paths = {c.document.file_path for c in calcs if c.document and c.document.is_current}
         if len(distinct_paths) > 1:
-            _issue(session, "mehrere_versionen", f"Pos. {item.position_number}: mehrere mögliche Kalkulationsversionen ({len(distinct_paths)} Dateien) – aktuell gewählt: {calcs[-1].document.file_name if calcs[-1].document else '?'}",
-                   "warnung", item=item)
+            top = calcs[-1].revision_index
+            clear = top is not None and all((c.revision_index or 0) < top for c in calcs[:-1] if c.document and c.document.file_path != calcs[-1].document.file_path)
+            _issue(session, "mehrere_versionen", f"Pos. {item.position_number}: mehrere mögliche Kalkulationsversionen ({len(distinct_paths)} Dateien) – aktuell gewählt: {calcs[-1].document.file_name if calcs[-1].document else '?'}"
+                   + (" (höchste Revision)" if clear else " – Auswahl nach Dateidatum, bitte prüfen"),
+                   "info" if clear else "warnung", item=item)
         for op in session.scalars(select(ManufacturingOperation).where(ManufacturingOperation.offer_item_id == item.id, ManufacturingOperation.calculation_id.is_(None))):
             op.calculation_id = calcs[-1].id
 

@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 102 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 104 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -258,3 +258,21 @@ liest der Import die Datei selbst (gleiche Fehlermeldungen). Außerdem wird nich
 einzelnen Wert in die Datenbank geschrieben (flush). Messung mit 80 synthetischen Dateien lokal:
 4,6 s → 2,0 s. Auf Netzlaufwerken ist der Gewinn voraussichtlich größer (Kopieren läuft parallel),
 aber nicht gemessen.
+
+## 14. Weniger Fehlalarme im Prüfcenter (nach Durchsicht der Warnungen)
+
+- **Revisionen `-R01`/`_R00`** werden jetzt erkannt (vorher nur `Rev`, `V`, `Index`). Bisher wurde die
+  aktuelle Kalkulation nur nach Dateidatum gewählt. Bei mehreren Angaben im Namen zählt die höchste.
+  Kalkulationen werden in Revisionsreihenfolge importiert; die neuere Version **ersetzt** technische
+  Daten und Kopfdaten der älteren (kein `widerspruch` mehr), außer der Wert wurde manuell korrigiert.
+  `mehrere_versionen` ist nur noch Hinweis, wenn die höchste Revision eindeutig ist.
+- **Wandstärke**: ist sie größer als ¼ des Durchmessers oder > 200 mm, war es die Länge
+  („Ø273 x 1200“) – Wert wird verworfen statt als unplausibel gemeldet.
+- **Angebotsnummer** „13533/26“ oder „DE.-13423/25“ gilt als gleich mit PT-13533.26 bzw. DE-13423.25.
+- **Zeichnungen**: Zuordnung zusätzlich über die Baugröße der HETA-Zeichnungsnummer
+  (KFW-3-201.14-002 → DN 200, auch mit Präfix wie „513-F066_…“). Nicht zuordenbare Dokumente bleiben
+  beim Angebot (Hinweis statt Warnung). Nennt ein Dokument mehrere Werte (Datenblatt, Stückliste),
+  wird nicht verglichen. Regelwerke werden nach Familie verglichen (AD 2000, EN 13445, ASME VIII);
+  DGRL/PED ist eine Richtlinie und wird nicht gegen das Regelwerk gestellt.
+- **Materialauszug**: Summe passt auch, wenn sie sich auf ein Stück bzw. auf alle Stück bezieht.
+- Beschriftung statt Zahl im Preisfeld („gewählt:“) ist „keine Angabe“, kein Typfehler.

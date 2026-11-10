@@ -75,9 +75,17 @@ _REVISION_PATTERNS = [
 ]
 
 
+# HETA-Schreibweise "-R01" / "_R00" (bei mehreren, z. B. "QA-13331.25-R00_Kalkulation-R02", zählt die höchste);
+# nicht die Vorlagenkennung "Kalkulation R06_01-2026"
+_HETA_REVISION = re.compile(r"(?:^|[_\-\s.(])R(?P<rev>[0-9]{1,2})(?=$|[_\-\s.)])(?!_\d{2}-\d{4})", re.IGNORECASE)
+
+
 def detect_revision(file_name: str) -> tuple[str | None, int | None]:
-    """Revisionskennzeichen aus dem Dateinamen (z. B. ``_Rev2``, ``_V3``, ``Index B``)."""
+    """Revisionskennzeichen aus dem Dateinamen (z. B. ``-R01``, ``_Rev2``, ``_V3``, ``Index B``)."""
     stem = file_name.rsplit(".", 1)[0]
+    heta = [int(m.group("rev")) for m in _HETA_REVISION.finditer(stem)]
+    if heta:
+        return f"R{max(heta):02d}", max(heta)
     for rx in _REVISION_PATTERNS:
         m = rx.search(stem)
         if m:

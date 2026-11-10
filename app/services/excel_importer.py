@@ -500,6 +500,8 @@ class Extractor:
                 extra["formula_verified"] = True
 
         value, text, err = _convert(spec, raw_value)
+        if err and self._looks_like_label(raw_value):
+            err, value = None, None   # Beschriftung (z. B. "gewählt:") statt Wert -> keine Angabe
         if err:
             issues.append(Issue("typfehler", f"Feld '{name}': {err} ({info.sheet}!{info.address})", "warnung", name, position))
             confidence = min(confidence, 0.3)

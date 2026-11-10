@@ -18,7 +18,7 @@ from app.services.folder_scanner import KNOWN_UNSUPPORTED, SUPPORTED_EXTENSIONS,
 
 # Bei inhaltlichen Änderungen der Regeln erhöhen: unveränderte, noch nicht importierte Dateien
 # werden beim nächsten Scan neu klassifiziert.
-CLASSIFIER_VERSION = 2
+CLASSIFIER_VERSION = 3
 
 # Ordnernamen (ohne führende Nummerierung wie "03 ") -> (Dokumenttyp, Punkte, nur für Endungen)
 FOLDER_RULES: list[tuple[str, str, float, tuple[str, ...]]] = [

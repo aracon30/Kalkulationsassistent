@@ -502,3 +502,36 @@ def test_template_copies_invalid_and_foreign_copies_are_not_imported(db, env):
     assert "weiteren Angeboten" in ignored[("SE-99911.26", "Kalkulation R06_01-2026.xlsx")]
     assert "ungültig" in ignored[("SE-99915.26", "UNGÜLTIG_SE-99915.26-R01_Kalkulation.xlsx")]
     assert "Kopie der Kalkulation von SE-99915.26" in ignored[("SE-99916.26", "SE-99915.26_Kalkulation.xlsx")]
+
+
+def test_newer_revision_replaces_values_without_conflict(db, env):
+    from tests.factory import R05_POSITIONS, make_heta_r05_kalkulation
+    folder = env / "K5" / "SE-99920.26"
+    make_heta_r05_kalkulation(folder / "SE-99920.26_Kalkulation-R01.xlsx", "SE-99920/26", positions=[dict(R05_POSITIONS[0], weight=400, elements=("Filterkerzen 5 µm TEST", 9))])
+    make_heta_r05_kalkulation(folder / "SE-99920.26_Kalkulation.xlsx", "SE-99920/26", positions=[R05_POSITIONS[0]])
+    scan_and_inventory(db, str(env / "K5"))
+    run_import(db)
+    item = db.scalars(select(OfferItem)).one()
+    assert item.weight == 400
+    assert item.current_calculation.document.file_name == "SE-99920.26_Kalkulation-R01.xlsx"
+    issues = {i.code: i for i in db.scalars(select(ReviewIssue))}
+    assert "widerspruch" not in issues
+    assert issues["mehrere_versionen"].severity == "info"
+
+
+def test_helper_rules_for_numbers_walls_codes():
+    from types import SimpleNamespace as Extracted_
+    Extracted = lambda n, g, p, v: Extracted_(field_name=n, value=v, method="profil")  # noqa: E731
+    from app.services.import_service import HETA_DRAWING_CODE_RE, _code_family, _drop_implausible_wall, _same_number
+    assert _same_number("13533/26", "PT-13533.26") and _same_number("DE.-13423/25", "DE-13423.25")
+    assert not _same_number("DE-13398/25", "PL-13437.25")
+    f = {"diameter": Extracted("diameter", "item", 1, 273.0), "wall_thickness": Extracted("wall_thickness", "item", 1, 1200.0)}
+    _drop_implausible_wall(f)
+    assert f["wall_thickness"].value is None
+    f = {"diameter": Extracted("diameter", "item", 1, 323.9), "wall_thickness": Extracted("wall_thickness", "item", 1, 4.5)}
+    _drop_implausible_wall(f)
+    assert f["wall_thickness"].value == 4.5
+    assert _code_family("ASME SEC. VIII") == _code_family("ASME SEC. VIII DIV.1")
+    assert _code_family("AD2000-MERKBLATT") == _code_family("AD 2000") and _code_family("DGRL 2014/68/EU") is None
+    m = HETA_DRAWING_CODE_RE.search("513-F066_KFW-3-101.11-014.pdf")
+    assert m and (m.group("prefix"), m.group("size")) == ("KFW", "101")
