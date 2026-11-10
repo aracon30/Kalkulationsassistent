@@ -548,12 +548,9 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
                 src = fields.get(source)
                 if getattr(calc, target, None) is None and src is not None and src.value is not None:
                     setattr(calc, target, src.value)
-                    ev = _store_value(session, doc, src, profile_validated=False, item=item, calc=calc, target="calculation", field_name=target)
+                    ev = _store_value(session, doc, src, profile_validated=ex.profile_validated, item=item, calc=calc, target="calculation", field_name=target)
                     ev.extraction_method = "profil_ersatz"
-                    ev.validation_status = ValStatus.PRUEFBEDARF
-                    ev.validation_message = f"Kein Wert für '{target}' in der Datei – '{source}' übernommen"
-                    _issue(session, "ersatzwert", f"Pos. {item.position_number}: {target} fehlt in {doc.file_name} – Wert aus {source} ({src.source_ref}) übernommen",
-                           "info", item=item, document=doc, value=ev)
+                    ev.validation_message = "; ".join(filter(None, [f"Kein Wert für '{target}' in der Datei – '{source}' übernommen", ev.validation_message]))
             _check_calculation(session, item, calc, doc)
 
         ops = ex.operations.get(pos, {})
@@ -848,6 +845,38 @@ def _import_drawing(session: Session, offer: Offer, doc: Document) -> list[str]:
     return [reason]
 
 
+INVALID_NAME_RE = re.compile(r"(?i)ung(ü|ue|u)ltig")
+
+
+def _names_offer(doc: Document, offer_number: str) -> bool:
+    return any(num == offer_number for num, _ in find_offer_numbers(doc.file_name))
+
+
+def _copy_reason(session: Session, doc: Document, offer_number: str, named: list[Document]) -> str | None:
+    """Grund, warum eine Kalkulationsdatei keine eigene Kalkulation dieses Angebots ist (sonst None)."""
+    if INVALID_NAME_RE.search(doc.file_name):
+        return "als „ungültig“ gekennzeichnet"
+    if doc in named:
+        return None
+    # Inhaltsgleiche Datei in anderen Angeboten: mehrfach -> unveränderte Vorlage; einmal -> Kopie der dortigen Kalkulation
+    if doc.content_hashed and doc.file_hash:
+        others = session.execute(select(Document.detected_offer_number, Document.file_name).where(
+            Document.file_hash == doc.file_hash, Document.is_current.is_(True),
+            Document.detected_offer_number.is_not(None), Document.detected_offer_number != offer_number)).all()
+        numbers = {n for n, _ in others}
+        if len(numbers) >= 2:
+            return f"inhaltsgleiche Datei liegt in {len(numbers)} weiteren Angeboten (unveränderte Vorlage oder Standarddatei)"
+        owner = next((n for n, name in others if any(num == n for num, _ in find_offer_numbers(name))), None)
+        if owner:
+            return f"inhaltsgleiche Kopie der Kalkulation von {owner}"
+    other_numbers = [num for num, _ in find_offer_numbers(doc.file_name) if num != offer_number]
+    if named and other_numbers:
+        return f"Kalkulation von {other_numbers[0]} (Referenz), maßgeblich: {named[0].file_name}"
+    if named and TEMPLATE_NAME_RE.search(doc.file_name):
+        return f"vermutlich Kalkulationsvorlage, maßgeblich: {named[0].file_name}"
+    return None
+
+
 def import_offer_group(session: Session, offer_number: str, docs: list[Document], profiles: dict[str, ImportProfile],
                        force: bool, reporter: Reporter, on_file: Callable[[str], None]) -> dict:
     """Importiert alle Dokumente eines Angebots. Der Aufrufer committet oder rollt zurück."""
@@ -858,17 +887,18 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
     order = {DocType.KALKULATION: 0, DocType.FERTIGUNGSZEIT: 1, DocType.ZEICHNUNG: 2}
     docs = sorted(docs, key=lambda d: (order.get(d.document_type, 9), d.modified_at or datetime.min, d.file_path))
     kalk_docs: list[Document] = []
-    # Unausgefüllte Vorlagenkopien ("Kalkulation R06_01-2026.xlsx") nicht als Kalkulation werten, wenn das
-    # Angebot eine Kalkulation mit Angebotsnummer im Dateinamen besitzt.
-    named = [d for d in docs if d.document_type == DocType.KALKULATION and find_offer_numbers(d.file_name)]
-    if named:
-        for d in [d for d in docs if d.document_type == DocType.KALKULATION and d not in named and TEMPLATE_NAME_RE.search(d.file_name)]:
-            docs.remove(d)
-            d.offer_id = offer.id
-            d.import_status = ImportStatus.IGNORIERT
-            d.import_message = f"Vermutlich Kalkulationsvorlage (ohne Angebotsnummer im Namen); maßgeblich: {named[0].file_name}"
-            _issue(session, "vorlage_ignoriert", f"{d.file_name}: als Vorlagenkopie nicht importiert – bei Bedarf umbenennen oder mit „Alle erneut importieren“ prüfen", "info", offer=offer, document=d)
-            stats["log"].append((d.id, d.file_path, "import", "ignoriert", d.import_message))
+    named = [d for d in docs if d.document_type == DocType.KALKULATION and _names_offer(d, offer_number)]
+    for d in [d for d in docs if d.document_type == DocType.KALKULATION]:
+        reason = _copy_reason(session, d, offer_number, named)
+        if reason is None:
+            continue
+        docs.remove(d)
+        d.offer_id = offer.id
+        d.import_status = ImportStatus.IGNORIERT
+        d.import_message = reason
+        _issue(session, "kopie_ignoriert", f"{d.file_name}: nicht importiert – {reason}. Bei Bedarf umbenennen und erneut importieren.",
+               "info", offer=offer, document=d)
+        stats["log"].append((d.id, d.file_path, "import", "ignoriert", reason))
     if not named:
         for d in docs:
             if d.document_type == DocType.KALKULATION and TEMPLATE_NAME_RE.search(d.file_name):

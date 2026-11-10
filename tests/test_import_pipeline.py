@@ -293,7 +293,7 @@ def test_heta_r05_template_end_to_end(db, env):
     assert not codes & {"angebotsnummer_abweichend", "widerspruch_fertigungszeit", "summe_abweichend", "widerspruch", "keine_positionen"}
     tpl = db.scalars(select(Document).where(Document.file_name == "Kalkulation R06_01-2026.xlsx")).one()
     assert tpl.import_status == ImportStatus.IGNORIERT and "vorlage" in tpl.import_message.lower()
-    assert "vorlage_ignoriert" in codes
+    assert "kopie_ignoriert" in codes
 
 
 def test_forced_reimport_replaces_values_from_earlier_wrong_profile(db, offer_base):
@@ -325,9 +325,9 @@ def test_heta_r05_without_chosen_price_uses_calculated_price(db, env):
     calc = item.current_calculation
     assert calc.offer_price == pytest.approx(calc.calculated_price) and calc.offer_price > 0
     ev = db.scalars(select(ExtractionValue).where(ExtractionValue.field_name == "offer_price")).one()
-    assert ev.extraction_method == "profil_ersatz" and ev.validation_status == ValStatus.PRUEFBEDARF
+    assert ev.extraction_method == "profil_ersatz" and "übernommen" in ev.validation_message
     codes = {i.code for i in db.scalars(select(ReviewIssue))}
-    assert {"ersatzwert", "stueckzahl_groesser_1"} <= codes and "preis_fehlt" not in codes
+    assert "stueckzahl_groesser_1" in codes and not codes & {"ersatzwert", "preis_fehlt"}
     assert item.quantity == 2
 
 
@@ -474,3 +474,31 @@ def test_service_calculation(db, env):
     assert db.scalar(select(func.count(OfferItem.id))) == 0
     run_import(db, force=True)
     assert db.scalar(select(func.count(ServiceCalc.id))) == 1
+
+
+def test_template_copies_invalid_and_foreign_copies_are_not_imported(db, env):
+    """Unveränderte Vorlage in mehreren Angeboten, 'ungültig'-Dateien und Kopien fremder Kalkulationen."""
+    import shutil
+    from tests.factory import R05_POSITIONS, make_heta_r05_kalkulation
+    root = env / "K4"
+    tpl = env / "tpl.xlsx"
+    make_heta_r05_kalkulation(tpl, positions=[dict(R05_POSITIONS[0], chosen=None)])
+    for nr in ("SE-99911.26", "SE-99912.26", "SE-99913.26"):
+        (root / nr).mkdir(parents=True)
+        shutil.copy(tpl, root / nr / "Kalkulation R06_01-2026.xlsx")
+    # ausgefüllte Vorlage (einzigartig) in einem vierten Angebot -> wird importiert
+    make_heta_r05_kalkulation(root / "SE-99914.26" / "Kalkulation R06_01-2026.xlsx", "SE-99914/26")
+    # eigene Kalkulation + Kopie davon in einem anderen Angebot + ungültige Fassung
+    make_heta_r05_kalkulation(root / "SE-99915.26" / "SE-99915.26_Kalkulation.xlsx", "SE-99915/26")
+    make_heta_r05_kalkulation(root / "SE-99915.26" / "UNGÜLTIG_SE-99915.26-R01_Kalkulation.xlsx", "SE-99915/26", extra_rows=2)
+    (root / "SE-99916.26").mkdir()
+    shutil.copy(root / "SE-99915.26" / "SE-99915.26_Kalkulation.xlsx", root / "SE-99916.26" / "SE-99915.26_Kalkulation.xlsx")
+    scan_and_inventory(db, str(root))
+    run_import(db)
+    with_calc = {o.offer_number for o in db.scalars(select(Offer)) if any(i.current_calculation for i in o.items)}
+    assert with_calc == {"SE-99914.26", "SE-99915.26"}
+    ignored = {(d.detected_offer_number, d.file_name): d.import_message for d in db.scalars(select(Document))
+               if d.import_status == ImportStatus.IGNORIERT}
+    assert "weiteren Angeboten" in ignored[("SE-99911.26", "Kalkulation R06_01-2026.xlsx")]
+    assert "ungültig" in ignored[("SE-99915.26", "UNGÜLTIG_SE-99915.26-R01_Kalkulation.xlsx")]
+    assert "Kopie der Kalkulation von SE-99915.26" in ignored[("SE-99916.26", "SE-99915.26_Kalkulation.xlsx")]

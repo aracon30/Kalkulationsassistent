@@ -72,6 +72,10 @@ Listet alle offenen Prüfpunkte, z. B.:
 - mehrere mögliche Kalkulationsversionen (`mehrere_versionen`)
 - Zeichnung keiner Position zuordenbar / Zuordnung unsicher
 - Importprofil noch nicht validiert (`profil_nicht_validiert`)
+- Kalkulationsdatei bewusst nicht importiert (`kopie_ignoriert`, Hinweis): Dateiname enthält „ungültig“;
+  inhaltsgleiche Datei liegt in mehreren Angeboten (unveränderte Vorlage); inhaltsgleiche Kopie der
+  Kalkulation eines anderen Angebots; oder Vorlagen-/Fremdkalkulation neben der eigenen Kalkulation.
+  Fehlt „gewählt:“, wird der kalkulierte Preis übernommen – ohne Prüfpunkt, vermerkt in der Quellenangabe.
 
 Aktionen (immer mit Namen):
 
