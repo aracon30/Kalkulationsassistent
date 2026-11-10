@@ -84,6 +84,7 @@ class ImportProfile(BaseModel):
     calculation_fields: dict[str, FieldSpec] = Field(default_factory=dict)
     operations: dict[str, FieldSpec] = Field(default_factory=dict)
     operations_table: OperationsTable | None = None
+    calculation_fallbacks: dict[str, str] = Field(default_factory=dict)  # Zielfeld -> Ersatzfeld
     source_file: str | None = None
 
     @property
@@ -229,6 +230,7 @@ class WorkbookExtraction:
     operations: dict[int, dict[str, Extracted]] = field(default_factory=dict)
     issues: list[Issue] = field(default_factory=list)
     application: str | None = None
+    fallbacks: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -570,7 +572,8 @@ class Extractor:
             else:
                 mode = "single"
 
-        result = WorkbookExtraction(prof.id, prof.profile.validated, profile_reason, mode, application=self.wb.application)
+        result = WorkbookExtraction(prof.id, prof.profile.validated, profile_reason, mode, application=self.wb.application,
+                                    fallbacks=dict(prof.calculation_fallbacks))
         for name, spec in prof.header_fields.items():
             ex = self.extract_field(name, "header", spec, self.wb.sheetnames, None)  # Kopf: alle Blätter (auch Deckblatt)
             if ex:

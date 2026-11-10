@@ -277,7 +277,15 @@ def make_heta_r05_kalkulation(path: Path, offer_slash: str = "SE-99902/26", posi
         s2 = s1 + 4
         ws[f"B{s2}"], ws[f"D{s2}"], ws[f"O{s2}"] = "Summe bei Gesamtabnahme", "FCA Lich, inkl. Provision", f"=O{s1}"
         c[f"O{s2}"] = pre * 1.2
-        ws[f"N{s2 + 2}"], ws[f"O{s2 + 2}"], ws[f"B{s2 + 3}"] = "gewählt:", p["chosen"], "R05_2023-05"
+        if p.get("chosen") is not None:
+            ws[f"N{s2 + 2}"], ws[f"O{s2 + 2}"] = "gewählt:", p["chosen"]
+        ws[f"B{s2 + 3}"] = "R05_2023-05"
+        # Spalte R ("Preis bei Abnahme 1 Stück") – bei Stückzahl 1 identisch mit Spalte O
+        for row in (m, f, k, d, t, z, b, h, rg, s1, s2):
+            ws[f"R{row}"] = f"=O{row}"
+            c[f"R{row}"] = c.get(f"O{row}", ws[f"O{row}"].value)
+        if p.get("quantity"):
+            ws[f"I{f}"] = p["quantity"]
         cache[p["sheet"]] = c
     v = wb.create_sheet("Vergleich")
     v["B2"] = "Vergleich (TEST)"

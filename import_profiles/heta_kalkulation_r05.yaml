@@ -5,19 +5,23 @@
 #   Zeile 2       "Kunde: …", "Benennung: …", "Angebot Nr: …", "Zeichnungsnummer: … (Pos. 1) / … (Pos. 2)", "Datum: …"
 #   Zeile 4       Positionstitel "Pos. 1 – Kerzenfilter KF-301.11.200 (…), DN300"
 #   ab Zeile 5    Materialauszug: B Benennung, D Abmaße, E Anzahl, H Material, O Kosten, R Gesamtkosten
-#   danach        feste Zeilen (Beschriftung in Spalte B, Gesamtbetrag in Spalte O, je Stück in Spalte R):
+#   danach        feste Zeilen (Beschriftung in Spalte B, Betrag für alle Gehäuse in Spalte O, für 1 Gehäuse in Spalte R):
 #                 Material Gesamtkosten, Fertigungskosten Schweißen (E Satz, G Stunden), Konstruktion (F Stunden),
 #                 Dokumentation, Third Party, ZFP + TÜV, Beizen/Passivieren, Lackieren, Hebesätze (F Satz),
 #                 Risiko + Gewinn, Summe bei Gesamtabnahme, "gewählt:" (Angebotspreis)
 # Zeilennummern verschieben sich je nach Länge des Materialauszugs – deshalb Suche über Beschriftungen.
 #
-# STATUS: an einer Originaldatei abgeglichen (2 Positionen). validated bleibt false, bis die
-# Zuordnung (insbesondere: welcher Preis gilt als Angebotspreis) fachlich bestätigt ist.
+# Festlegungen (10.11.2026, Angebotspreis vom Fachbereich bestätigt):
+#   - Alle Kostenwerte aus Spalte R = "Preis bei Abnahme 1 Stück" (ein Gehäuse inkl. einmaliger Kosten wie
+#     Konstruktion/Dokumentation). Passt zu Stunden und Gewicht je Gehäuse und macht Angebote vergleichbar.
+#   - Angebotspreis = "gewählt:"; fehlt er, wird der kalkulierte Preis übernommen (Prüfbedarf).
+#   - Bei Stückzahl > 1 entsteht ein Prüfhinweis (Bezug von "gewählt:" klären).
+# STATUS: validiert an SE-13705.26 (2 Positionen). Zurücksetzen: validated: false.
 profile:
   id: heta_kalkulation_r05
   name: HETA Materialauszug / Kalkulation Behälterbau (R05)
   document_type: angebotskalkulation
-  validated: false
+  validated: true
   priority: 30
 
 detection:
@@ -52,24 +56,28 @@ item_fields:
   quantity: {labels: [Anzahl Gehäuse], type: integer, occurrence: first}
 
 calculation_fields:
-  material_cost: {labels: [Material Gesamtkosten], value_column: O, type: number, unit: EUR}
-  material_overhead: {labels: [Materialgemeinkosten], value_column: O, type: number, unit: EUR}
+  material_cost: {labels: [Material Gesamtkosten], value_column: R, type: number, unit: EUR}
+  material_overhead: {labels: [Materialgemeinkosten], value_column: R, type: number, unit: EUR}
   manufacturing_hourly_rate: {labels: [Fertigungskosten Schweißen], value_column: E, type: number, unit: EUR/h}
   manufacturing_hours: {labels: [Fertigungskosten Schweißen], value_column: G, type: number, unit: h}
-  manufacturing_cost: {labels: [Fertigungskosten Schweißen], value_column: O, type: number, unit: EUR}
+  manufacturing_cost: {labels: [Fertigungskosten Schweißen], value_column: R, type: number, unit: EUR}
   engineering_hours: {labels: [Konstruktion], match: exact, value_column: F, type: number, unit: h}
-  engineering_cost: {labels: [Konstruktion], match: exact, value_column: O, type: number, unit: EUR}
-  documentation_cost: {labels: [Dokumentation], match: exact, value_column: O, type: number, unit: EUR}
-  inspection_cost: {labels: [Third Party], value_column: O, type: number, unit: EUR}
-  ndt_tuev_cost: {labels: [ZFP + TÜV, ZFP], value_column: O, type: number, unit: EUR}
-  surface_treatment_cost: {labels: [Beizen / Passivieren], value_column: O, type: number, unit: EUR}
-  procurement_cost: {labels: [Beschaffungskosten Externer, Beschaffungskosten], value_column: O, type: number, unit: EUR}
-  sales_overhead: {labels: [Vertriebsgemeinkosten], value_column: O, type: number, unit: EUR}
-  risk_profit: {labels: [Risiko + Gewinn], value_column: O, type: number, unit: EUR}
-  # Selbstkosten: unbeschriftete Summe direkt über "Risiko + Gewinn" in Spalte R (je Stück)
+  engineering_cost: {labels: [Konstruktion], match: exact, value_column: R, type: number, unit: EUR}
+  documentation_cost: {labels: [Dokumentation], match: exact, value_column: R, type: number, unit: EUR}
+  inspection_cost: {labels: [Third Party], value_column: R, type: number, unit: EUR}
+  ndt_tuev_cost: {labels: [ZFP + TÜV, ZFP], value_column: R, type: number, unit: EUR}
+  surface_treatment_cost: {labels: [Beizen / Passivieren], value_column: R, type: number, unit: EUR}
+  procurement_cost: {labels: [Beschaffungskosten Externer, Beschaffungskosten], value_column: R, type: number, unit: EUR}
+  sales_overhead: {labels: [Vertriebsgemeinkosten], value_column: R, type: number, unit: EUR}
+  risk_profit: {labels: [Risiko + Gewinn], value_column: R, type: number, unit: EUR}
+  # Selbstkosten: unbeschriftete Summe direkt über "Risiko + Gewinn" in Spalte R
   total_cost: {labels: [Risiko + Gewinn], value_column: R, row_offset: -1, type: number, unit: EUR}
-  # Rechnerischer Preis: letzte "Summe bei Gesamtabnahme" (FCA inkl. Provision), Spalte O
-  calculated_price: {labels: [Summe bei Gesamtabnahme], value_column: O, occurrence: last, type: number, unit: EUR}
+  # Rechnerischer Preis: letzte "Summe bei Gesamtabnahme" (FCA inkl. Provision), Spalte R = 1 Stück
+  calculated_price: {labels: [Summe bei Gesamtabnahme], value_column: R, occurrence: last, type: number, unit: EUR}
   # Angebotspreis: manuell "gewählt:" (gerundeter Preis, der ins Kundenangebot geht)
   offer_price: {labels: [gewählt], value_column: O, type: number, unit: EUR}
   calculation_date: {labels: [Datum], inline: true, type: date}
+
+# Ersatzwerte, wenn ein Feld in der Datei fehlt (immer Prüfbedarf)
+calculation_fallbacks:
+  offer_price: calculated_price

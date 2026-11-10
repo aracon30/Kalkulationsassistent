@@ -312,3 +312,32 @@ def test_forced_reimport_replaces_values_from_earlier_wrong_profile(db, offer_ba
     assert [(i.position_number, i.product_type, i.material) for i in offer.items] == [(1, "Kerzenfilter", "1.4404"), (2, "Beutelfilter", "1.4404")]
     assert not db.scalars(select(ReviewIssue).where(ReviewIssue.code == "widerspruch")).all()
     assert db.scalar(select(func.count(Calculation.id))) == 2
+
+
+def test_heta_r05_without_chosen_price_uses_calculated_price(db, env):
+    from tests.factory import R05_POSITIONS, make_heta_r05_kalkulation
+    folder = env / "K3" / "SE-99903.26-X"
+    make_heta_r05_kalkulation(folder / "SE-99903.26_Kalkulation.xlsx", "SE-99903/26",
+                              positions=[dict(R05_POSITIONS[0], chosen=None, quantity=2)])
+    scan_and_inventory(db, str(env / "K3"))
+    run_import(db)
+    item = db.scalars(select(OfferItem)).one()
+    calc = item.current_calculation
+    assert calc.offer_price == pytest.approx(calc.calculated_price) and calc.offer_price > 0
+    ev = db.scalars(select(ExtractionValue).where(ExtractionValue.field_name == "offer_price")).one()
+    assert ev.extraction_method == "profil_ersatz" and ev.validation_status == ValStatus.PRUEFBEDARF
+    codes = {i.code for i in db.scalars(select(ReviewIssue))}
+    assert {"ersatzwert", "stueckzahl_groesser_1"} <= codes and "preis_fehlt" not in codes
+    assert item.quantity == 2
+
+
+def test_heta_r05_validated_profile_gives_verified_values(db, env):
+    from tests.factory import make_heta_r05_kalkulation
+    folder = env / "K4" / "SE-99904.26-X"
+    make_heta_r05_kalkulation(folder / "SE-99904.26_Kalkulation.xlsx", "SE-99904/26")
+    scan_and_inventory(db, str(env / "K4"))
+    run_import(db)
+    price = db.scalars(select(ExtractionValue).where(ExtractionValue.field_name == "offer_price")).first()
+    total = db.scalars(select(ExtractionValue).where(ExtractionValue.field_name == "total_cost")).first()
+    assert price.validation_status == ValStatus.VERIFIZIERT and total.validation_status == ValStatus.VERIFIZIERT
+    assert not db.scalars(select(ReviewIssue).where(ReviewIssue.code.in_(["formel_cache_abweichung", "profil_nicht_validiert"]))).all()

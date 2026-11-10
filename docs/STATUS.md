@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 86 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 88 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -146,11 +146,16 @@ Kein Wert der Dateien entspricht den Kontrollpreisen; die Kontrollstunden passen
 Kontrollwerte stammen vermutlich aus einem älteren Dateistand. Filterfläche (5,74 / 5,52 m²) steht in
 keiner der beiden Dateien. Fachlich zu bestätigen: Gilt „gewählt:“ als Angebotspreis?
 
-Festlegungen im Profil (bitte bestätigen):
-- Angebotspreis = „gewählt:“; zusätzlich wird der rechnerische Preis als „Kalkulierter Preis“ gespeichert.
-- Kostenbeträge aus Spalte O (alle Gehäuse der Position), Selbstkosten aus Spalte R (je Stück).
+Festlegungen im Profil (Stand 10.11.2026):
+- Angebotspreis = „gewählt:“ (vom Fachbereich bestätigt). Fehlt „gewählt:“, wird der kalkulierte Preis
+  übernommen und als Ersatzwert mit Prüfbedarf markiert.
+- Alle Kostenwerte aus Spalte R („Preis bei Abnahme 1 Stück“ = ein Gehäuse inkl. einmaliger Kosten wie
+  Konstruktion/Dokumentation). Passt zu Stunden und Gewicht je Gehäuse. Bei Stückzahl > 1 entsteht ein
+  Prüfhinweis, weil der Bezug von „gewählt:“ (je Stück oder gesamt) dann nicht eindeutig ist.
 - Gewicht = „Gewicht in Kg“ aus der Zeile Beizen/Passivieren.
-- Arbeitsgänge werden mit ihrem Originaltext übernommen; zum Vergleich mit der Kalkulation
-  dient „Fertigungszeit gerundet“.
-- Dateien „Kalkulation R0x_…“ ohne Angebotsnummer gelten als Vorlagenkopie und werden ignoriert,
-  wenn das Angebot eine Kalkulation mit Angebotsnummer im Namen hat.
+- Arbeitsgänge mit Originaltext; Vergleich mit der Kalkulation über „Fertigungszeit gerundet“.
+- „Kalkulation R0x_…“-Dateien sind Vorlagenkopien (bestätigt): ignoriert, wenn eine Kalkulation mit
+  Angebotsnummer existiert, sonst Prüfhinweis.
+- Die Profile `heta_kalkulation_r05` und `heta_fertigungszeit` sind auf `validated: true` gesetzt.
+  Werte können damit „Verifiziert“ werden, wenn sie eindeutig sind und alle Regeln bestehen;
+  Mehrdeutiges, Ersatzwerte und Widersprüche bleiben im Prüfcenter. Zurücksetzen: `validated: false`.

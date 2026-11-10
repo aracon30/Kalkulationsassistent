@@ -514,6 +514,16 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
                 if e.value is not None:
                     setattr(calc, name, e.value)
         if calc is not None:
+            for target, source in ex.fallbacks.items():
+                src = fields.get(source)
+                if getattr(calc, target, None) is None and src is not None and src.value is not None:
+                    setattr(calc, target, src.value)
+                    ev = _store_value(session, doc, src, profile_validated=False, item=item, calc=calc, target="calculation", field_name=target)
+                    ev.extraction_method = "profil_ersatz"
+                    ev.validation_status = ValStatus.PRUEFBEDARF
+                    ev.validation_message = f"Kein Wert für '{target}' in der Datei – '{source}' übernommen"
+                    _issue(session, "ersatzwert", f"Pos. {item.position_number}: {target} fehlt in {doc.file_name} – Wert aus {source} ({src.source_ref}) übernommen",
+                           "info", item=item, document=doc, value=ev)
             _check_calculation(session, item, calc, doc)
 
         ops = ex.operations.get(pos, {})
@@ -523,6 +533,9 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
 
 
 def _check_calculation(session: Session, item: OfferItem, calc: Calculation, doc: Document) -> None:
+    if item.quantity is not None and item.quantity > 1:
+        _issue(session, "stueckzahl_groesser_1", f"Pos. {item.position_number}: Stückzahl {item.quantity} – Kostenwerte gelten je Gehäuse; "
+               f"prüfen, ob der Angebotspreis je Stück oder gesamt gilt ({doc.file_name})", "info", item=item, document=doc)
     if calc.offer_price is None:
         _issue(session, "preis_fehlt", f"Pos. {item.position_number}: Angebotspreis konnte in {doc.file_name} nicht gefunden werden", "warnung", item=item, document=doc)
     if calc.total_cost is not None and calc.offer_price is not None and calc.offer_price < calc.total_cost:
@@ -655,6 +668,11 @@ def import_offer_group(session: Session, offer_number: str, docs: list[Document]
             d.import_message = f"Vermutlich Kalkulationsvorlage (ohne Angebotsnummer im Namen); maßgeblich: {named[0].file_name}"
             _issue(session, "vorlage_ignoriert", f"{d.file_name}: als Vorlagenkopie nicht importiert – bei Bedarf umbenennen oder mit „Alle erneut importieren“ prüfen", "info", offer=offer, document=d)
             stats["log"].append((d.id, d.file_path, "import", "ignoriert", d.import_message))
+    if not named:
+        for d in docs:
+            if d.document_type == DocType.KALKULATION and TEMPLATE_NAME_RE.search(d.file_name):
+                _issue(session, "vorlage_pruefen", f"{d.file_name}: Dateiname wie Kalkulationsvorlage und keine Kalkulation mit Angebotsnummer im Angebot – prüfen, ob ausgefüllt",
+                       "info", offer=offer, document=d)
     for doc in docs:
         reporter.check_cancel()
         on_file(doc.file_path)

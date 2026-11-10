@@ -3,12 +3,12 @@
 # Spalte ("Pos. 1 KF DN300 [h]", "Pos. 2 BF DN1000 [h]"), frei benannte Arbeitsgänge bis "Grundzeit je Behälter",
 # danach "+ Verteilzeit (REFA)", "Fertigungszeit je Behälter", "Fertigungszeit gerundet [h]".
 # Der gerundete Wert wird in die Kalkulation übernommen und dort verglichen.
-# STATUS: an einer Originaldatei abgeglichen, fachliche Bestätigung ausstehend.
+# STATUS: validiert an SE-13705.26. Zurücksetzen: validated: false.
 profile:
   id: heta_fertigungszeit
   name: HETA Fertigungszeit je Behälter
   document_type: fertigungszeitkalkulation
-  validated: false
+  validated: true
   priority: 30
 
 detection:

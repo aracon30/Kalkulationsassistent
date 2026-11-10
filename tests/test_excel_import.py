@@ -17,7 +17,8 @@ def profiles(env):
 
 def test_profiles_load_with_inheritance(profiles):
     assert {"generic_excel", "generic_fertigungszeit", "heta_kalkulation_r05", "heta_fertigungszeit"} <= set(profiles)
-    assert all(p.profile.validated is False for p in profiles.values())
+    assert not profiles["generic_excel"].profile.validated and not profiles["generic_fertigungszeit"].profile.validated
+    assert profiles["heta_kalkulation_r05"].profile.validated and profiles["heta_fertigungszeit"].profile.validated
 
 
 def test_profile_errors(tmp_path):
