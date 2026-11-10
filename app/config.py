@@ -91,8 +91,8 @@ class Settings(BaseModel):
         return self.data_dir / "backups"
 
     @property
-    def simulation_scheme_file(self) -> Path:
-        return self.config_dir / "calculation_scheme.yaml"
+    def heta_calc_file(self) -> Path:
+        return self.config_dir / "heta_kalkulation.yaml"
 
     @property
     def similarity_file(self) -> Path:

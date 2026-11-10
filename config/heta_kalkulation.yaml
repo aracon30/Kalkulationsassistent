@@ -1,0 +1,21 @@
+# Vorkalkulation nach der HETA-Vorlage "Materialauszug / Kalkulation Behälterbau" (R05_2023-05).
+# Sätze und Formeln aus der Originaldatei SE-13705.26_Kalkulation.xlsx übernommen (Blatt KF-300):
+#   Materialgemeinkosten  = Material × MGK-Satz                                  (F46 = 8 %)
+#   Beschaffung extern    = (Third Party + ZFP/TÜV + Beizen + Lackieren) × Satz  (F48 = 5 %)
+#   Vertriebsgemeinkosten = (Material + MGK) × Satz                              (F50 = 20 %)
+#   Selbstkosten          = Summe aller Kostenzeilen                              (R51)
+#   Risiko + Gewinn       = Selbstkosten × Satz                                   (F52 = 20 %)
+#   Preis EXW             = Selbstkosten + Risiko/Gewinn                          (R54)
+#   Provision             = Preis EXW / (1 − Satz) − Preis EXW                     (R62)
+#   Preis FCA             = EXW + Verpackung + Versand + Provision                (R64)
+# Werte gelten je Gehäuse (Spalte R "Preis bei Abnahme 1 Stück").
+defaults:
+  manufacturing_hourly_rate: 65     # Fertigungskosten Schweißen (R04)
+  engineering_hourly_rate: 75       # Konstruktion (R04)
+  documentation_hourly_rate: 75     # Dokumentation (R04)
+  pickling_price_per_kg: 1.0        # Beizen / Passivieren
+  material_overhead_rate: 0.08
+  procurement_rate: 0.05
+  sales_overhead_rate: 0.20
+  risk_profit_rate: 0.20
+  commission_rate: 0.0

@@ -21,16 +21,16 @@
 {% if f.ansicht == 'gruppen' %}
 <div class="table-wrap">
 <table class="table">
-  <thead><tr><th>Kategorie</th><th>Abmaße</th><th>Werkstoff</th><th class="num">Anzahl</th><th class="num">min</th><th class="num">Median</th><th class="num">max</th><th>Einheit</th>
+  <thead><tr><th>Kategorie</th><th>Form</th><th>Abmaße</th><th>Werkstoff</th><th class="num">Anzahl</th><th class="num">min</th><th class="num">Median</th><th class="num">max</th><th>Einheit</th>
     <th class="num">€/kg (gesch.)</th><th>Zuletzt</th><th>Beispiel</th></tr></thead>
   <tbody>
   {% for g in groups %}
-    <tr><td>{{ g.category }}</td><td class="nowrap">{{ g.dimensions or '–' }}</td><td>{{ g.material or '–' }}</td><td class="num">{{ g.n }}</td>
+    <tr><td>{{ g.category }}</td><td class="small">{{ g.form or '' }}</td><td class="nowrap">{{ g.dimensions or '–' }}</td><td>{{ g.material or '–' }}</td><td class="num">{{ g.n }}</td>
       <td class="num">{{ g.min|de_num(2) }}</td><td class="num"><strong>{{ g.median|de_num(2) }}</strong></td><td class="num">{{ g.max|de_num(2) }}</td><td>{{ g.unit }}</td>
       <td class="num">{{ g.price_per_kg|de_num(2) }}</td>
       <td class="nowrap small">{{ g.latest_price|de_num(2) }} · <a href="/angebote/{{ g.latest_offer.id }}">{{ g.latest_offer.offer_number }}</a></td>
       <td class="small">{{ g.example }}</td></tr>
-  {% else %}<tr><td colspan="11" class="muted">Keine Materialzeilen gefunden. Materialauszüge werden beim Import von Kalkulationen der Vorlage R05 erfasst.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="12" class="muted">Keine Materialzeilen gefunden. Materialauszüge werden beim Import von Kalkulationen der Vorlage R05 erfasst.</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

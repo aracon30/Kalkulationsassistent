@@ -199,6 +199,7 @@ R05_POSITIONS = [
     {"pos": 1, "sheet": "KF-300", "title": "Pos. 1 – Kerzenfilter KF-301.11.200 (TEST), DN300", "drawing": "KF-9-301.11-005",
      "mantel": ("Rohr, geschweißt", "Ø323,9 x 4,5", "1.4404"), "elements": ("Filterkerzen 5 µm TEST", 7), "hours": 88, "weight": 250,
      "material_rows": [("Behältermantel", "Rohr, geschweißt", "Ø323,9 x 4,5", 1, 1.7, "1.4404", 35, 220),
+                       ("Kerzenboden", "Blech", "Ø314 x 15", 1, None, "1.4404", 35, 250),
                        ("Behälterflansch", "V-Flansch", "DN300 PN16", 1, None, "1.4404", 35, 450),
                        ("Filterkerzen 5 µm TEST", "Erstbestückung", "Ø63 x 1005", 7, None, "316L", 0, 720),
                        ("Schrauben + Muttern Deckel", "E-Teil +2", "M24", 14, None, "25CrMo4, verzinkt", 35, 8)], "chosen": 33750},
@@ -235,8 +236,11 @@ def make_heta_r05_kalkulation(path: Path, offer_slash: str = "SE-99902/26", posi
             ws[f"A{r}"], ws[f"B{r}"], ws[f"C{r}"], ws[f"D{r}"], ws[f"E{r}"] = r - 4, name, form, dims, qty
             ws[f"F{r}"], ws[f"H{r}"], ws[f"I{r}"], ws[f"J{r}"] = length, mat, apz, unit
             ws[f"O{r}"], ws[f"R{r}"] = f"=((IF(F{r}=0,1,F{r}))*E{r}*J{r})+I{r}", f"=O{r}+Q{r}"
-            c[f"O{r}"], c[f"R{r}"] = cost, cost
-            mat_total += cost
+            bearb = 300 if name == "Kerzenboden" else 0  # Bearbeitungskosten in Spalte Q wie im Original
+            if bearb:
+                ws[f"Q{r}"] = bearb
+            c[f"O{r}"], c[f"R{r}"] = cost, cost + bearb
+            mat_total += cost + bearb
             r += 1
         last = r - 1
         r += 1

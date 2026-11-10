@@ -98,16 +98,33 @@ Fertigungsstunden und Status. „Bewertung nachvollziehen“ zeigt je Merkmal di
   gleiche Gruppe (z. B. Austenit 1.4404/1.4571) = 60 %.
 - Gewichte und Toleranzen: `config/similarity.yaml`.
 
-## 7. Kalkulationssimulation
+## 7. Neue Anfrage (Vorkalkulation)
 
-Position wählen (übernimmt Werte der Originalkalkulation) oder leer beginnen; Eingaben ändern –
-die Ergebnisse werden sofort neu berechnet. Angezeigt werden je Zeile **Kostenbasis, Zuschlagssatz,
-Zuschlagsbetrag**, sowie **Selbstkosten, Gewinnzuschlag, Verkaufspreis, Gewinnmarge** (bezogen auf
-den Verkaufspreis) und €/kg. Fehlende Eingaben werden genannt und nicht als 0 angenommen.
+Menü *Angebotserstellung → Neue Anfrage*, oder in einer Angebotsansicht „Neue Anfrage mit diesem
+Apparat als Vorlage“.
 
-Das Zuschlagsschema (`config/calculation_scheme.yaml`) ist ein **Beispiel und nicht validiert** –
-die Oberfläche weist darauf hin. Simulationen werden separat gespeichert und verändern nie die
-importierte Originalkalkulation.
+1. **Eckdaten** eingeben (alles optional, mindestens ein Merkmal). Die Anfrage wird angelegt und der
+   ähnlichste frühere Apparat als Vorlage gewählt.
+2. **Ähnliche Apparate:** mit „als Vorlage“ eine andere Position wählen.
+3. **Materialauszug der Vorlage** (je Gehäuse): je Bauteil Preis der Vorlage, Median (Anzahl Werte) und
+   zuletzt angesetzter Preis aus allen Kalkulationen. Der „Ansatz“ ist mit dem Median vorbelegt, wenn
+   mindestens zwei Werte vorliegen. Anzahl, Länge, Ansatz, APZ und Bearbeitung sind änderbar; Zeilen per
+   Häkchen abwählbar. Schalter: „Median aller Angebote“, „Preise der Vorlage“, „zuletzt angesetzte Preise“.
+   Die Summe wird als Materialkosten übernommen (abschaltbar, dann Materialkosten frei eintragen).
+4. **Vorkalkulation** nach der HETA-Vorlage R05: Fertigung, Konstruktion, Dokumentation, Third Party,
+   ZFP/TÜV, Beizen (Gewicht × €/kg), Lackieren, Hebesätze (MGK 8 %, Beschaffung 5 %, VGK 20 %,
+   Risiko + Gewinn 20 %), Verpackung, Versand, Provision. Ergebnis sofort: Selbstkosten, Preis FCA je
+   Gehäuse, €/kg, bei Stückzahl > 1 der Gesamtpreis. Daneben die Spanne der ähnlichen Apparate.
+5. **Speichern** mit Notizen und Status (in Arbeit / angeboten / verworfen), **Drucken** für die Akte.
+
+Die eigentliche Kalkulation erfolgt weiterhin in der Excel-Vorlage; die Anfrage ist Vorbereitung und
+Plausibilitätsrahmen. Originaldaten werden nicht verändert. Sätze: `config/heta_kalkulation.yaml`.
+
+## 7a. Materialpreise
+
+Alle Bauteilzeilen aus den Materialauszügen: Ansicht „Preisspannen“ (gleiches Bauteil = Kategorie +
+Form + Abmaße + Werkstoff + Einheit, ohne Abmaße zusätzlich Benennung) oder „Einzelzeilen“, Filter,
+CSV-Export. €/kg ist für Rohre und Bleche aus Abmaßen geschätzt.
 
 ## 8. Einstellungen
 

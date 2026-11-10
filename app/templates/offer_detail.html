@@ -95,7 +95,7 @@
         {% for k in row.calcs %}<tr><td>{{ k.document.file_name if k.document else '–' }}</td><td>{{ k.revision or '–' }}</td><td class="num">{{ k.total_cost|de_num(2) }}</td><td class="num">{{ k.offer_price|de_num(2) }}</td><td>{{ 'aktuell' if k.is_current else '' }}</td></tr>{% endfor %}
         </table></details>
       {% endif %}
-      <p><a class="btn small" href="/simulation?position={{ it.id }}">Simulation mit diesen Werten</a></p>
+      <p><a class="btn small" href="/anfragen/neu?ref={{ it.id }}">Neue Anfrage mit diesem Apparat als Vorlage</a></p>
       {% else %}<p class="muted">Keine Kalkulation importiert.</p>{% endif %}
 
       {% if row.mlines %}

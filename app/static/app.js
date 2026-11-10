@@ -136,47 +136,91 @@
     });
   }
 
-  /* ---------- Kalkulationssimulation ---------- */
-  function initSimulation() {
-    var form = document.getElementById("sim-form");
+  /* ---------- Neue Anfrage: Materialauszug + Vorkalkulation ---------- */
+  function num(v) {
+    var t = String(v === undefined || v === null ? "" : v).trim();
+    if (!t) return null;
+    if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, "");  // 1.234,56
+    t = t.replace(",", ".");
+    var n = Number(t);
+    return isNaN(n) ? null : n;
+  }
+  function initInquiry() {
+    var form = document.getElementById("calc-form");
     if (!form) return;
-    var tbody = document.querySelector("#sim-table tbody");
+    var useSum = document.getElementById("use-mat-sum");
+    var matInput = form.querySelector("input[name=material_cost]");
+    var tbody = document.querySelector("#calc-table tbody");
     var timer = null;
+    function materials() {
+      var rows = [], sum = 0;
+      document.querySelectorAll("#mat-table tbody tr").forEach(function (tr) {
+        var g = function (c) { return num(tr.querySelector(c).value); };
+        var inc = tr.querySelector(".m-inc").checked, qty = g(".m-qty"), len = g(".m-len"), price = g(".m-price"), apz = g(".m-apz") || 0, mfg = g(".m-mfg") || 0;
+        var cost = (price !== null && qty !== null) ? (len || 1) * qty * price + apz + mfg : null;
+        tr.querySelector(".m-cost").textContent = cost === null ? "–" : fmt(cost, 2);
+        tr.style.opacity = inc ? "1" : ".45";
+        if (inc && cost !== null) sum += cost;
+        rows.push({ i: Number(tr.dataset.i), qty: qty, length: len, price: price, apz: apz, mfg: mfg, include: inc });
+      });
+      var el = document.getElementById("mat-sum");
+      if (el) el.textContent = fmt(sum, 2) + " €";
+      return { rows: rows, sum: sum };
+    }
     function collect() {
       var values = {};
       form.querySelectorAll("input").forEach(function (i) {
-        var raw = i.value.trim().replace(/\./g, "").replace(",", ".");
-        if (i.value.trim().match(/^\d+\.\d{1,3}$/)) raw = i.value.trim();  // Dezimalpunkt erlauben
-        var v = raw === "" ? null : Number(raw);
-        if (v !== null && isNaN(v)) v = null;
+        var v = num(i.value);
         if (v !== null && i.dataset.rate) v = v / 100;
         values[i.name] = v;
       });
       return values;
     }
     function run() {
+      var m = materials();
+      if (useSum && useSum.checked && matInput) {
+        matInput.value = m.sum ? m.sum.toFixed(2).replace(".", ",") : "";
+        matInput.readOnly = true;
+      } else if (matInput) { matInput.readOnly = false; }
       var values = collect();
-      document.getElementById("inputs_json").value = JSON.stringify(values);
-      fetch("/api/simulation/berechnen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: values }) })
+      if (useSum && !useSum.checked) values._manual_material = 1;
+      document.getElementById("calc_inputs_json").value = JSON.stringify(values);
+      document.getElementById("material_json").value = JSON.stringify(m.rows);
+      fetch("/api/anfragen/berechnen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inputs: values }) })
         .then(function (r) { return r.json(); })
         .then(function (res) {
           tbody.innerHTML = res.lines.map(function (l) {
-            return '<tr class="' + (l.subtotal ? "sum-row" : "") + '"><td>' + esc(l.label) + '<div class="small muted">' + esc(l.formula) + "</div></td>" +
-              '<td class="num">' + (l.kind === "surcharge" ? fmt(l.base, 2) : "") + "</td>" +
-              '<td class="num">' + (l.kind === "surcharge" && l.rate !== null ? fmt(l.rate * 100, 2) + " %" : "") + "</td>" +
-              '<td class="num">' + fmt(l.amount, 2) + "</td></tr>";
+            return '<tr class="' + (l.subtotal ? "sum-row" : "") + '"><td>' + esc(l.label) + (l.detail ? '<div class="small muted">' + esc(l.detail) + "</div>" : "") +
+              '</td><td class="num">' + fmt(l.amount, 2) + "</td></tr>";
           }).join("");
           document.getElementById("r-total").textContent = fmt(res.total_cost, 2) + " €";
-          document.getElementById("r-profit").textContent = fmt(res.profit, 2) + " €";
-          document.getElementById("r-price").textContent = fmt(res.sales_price, 2) + " €";
-          document.getElementById("r-margin").textContent = res.margin === null ? "–" : fmt(res.margin * 100, 1) + " %";
-          document.getElementById("r-kg").textContent = res.price_per_kg === null ? "–" : fmt(res.price_per_kg, 2) + " €/kg";
-          document.getElementById("r-missing").textContent = res.missing_inputs.length ? "Fehlende Eingaben (werden nicht als 0 angenommen): " + res.missing_inputs.join(", ") : "";
+          document.getElementById("r-price").textContent = res.complete ? fmt(res.price_fca, 2) + " €" : "unvollständig";
+          document.getElementById("r-kg").textContent = res.price_per_kg === null ? "–" : fmt(res.price_per_kg, 2);
+          var q = document.getElementById("r-qty");
+          if (q) q.textContent = fmt(res.price_fca * Number(q.dataset.qty), 2) + " €";
+          var miss = res.missing.length ? "Pflichtangaben fehlen: " + res.missing.join(", ") + ". " : "";
+          var emp = res.empty.length ? "Nicht ausgefüllt (als 0 gerechnet): " + res.empty.join(", ") + "." : "";
+          document.getElementById("r-missing").textContent = miss + emp;
         });
     }
-    form.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(run, 200); });
+    var schedule = function () { clearTimeout(timer); timer = setTimeout(run, 200); };
+    form.addEventListener("input", schedule);
+    var mt = document.getElementById("mat-table");
+    if (mt) { mt.addEventListener("input", schedule); mt.addEventListener("change", schedule); }
+    if (useSum) useSum.addEventListener("change", run);
+    document.querySelectorAll("[data-set-price]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var src = btn.dataset.setPrice;
+        document.querySelectorAll("#mat-table tbody tr").forEach(function (tr) {
+          var v = tr.dataset[src] !== "" ? tr.dataset[src] : tr.dataset.then;
+          if (v !== "" && v !== undefined) tr.querySelector(".m-price").value = Number(v).toFixed(2).replace(".", ",");
+        });
+        run();
+      });
+    });
+    document.getElementById("save-form").addEventListener("submit", function () { run(); });
     run();
   }
 
-  window.HETA = { pollJobs: pollJobs, initViewer: initViewer, initSources: initSources, initSimulation: initSimulation };
+  window.HETA = { pollJobs: pollJobs, initViewer: initViewer, initSources: initSources, initInquiry: initInquiry, fmt: fmt, esc: esc };
 })();

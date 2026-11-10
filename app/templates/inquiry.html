@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge %}
+{% block title %}{{ inq.title }} – HETA{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ inq.title }} <span class="hint">{{ inq.customer or '' }}</span></h1>
+  <span class="badge info">{{ inq.status }}</span>
+</div>
+
+<details class="card"><summary><strong>Eckdaten</strong>: {{ inq.product_type or '?' }}{% if inq.dn %} · DN {{ inq.dn|de_auto }}{% endif %}{% if inq.material %} · {{ inq.material }}{% endif %}{% if inq.filter_elements %} · {{ inq.filter_elements }} Elemente{% endif %}{% if inq.weight %} · {{ inq.weight|de_auto }} kg{% endif %}{% if inq.quantity %} · {{ inq.quantity }} Stk{% endif %} – ändern</summary>
+  <form method="post" action="/anfragen/{{ inq.id }}/eckdaten" class="grid-form">
+    <label>Bezeichnung<input name="title" value="{{ inq.title }}"></label>
+    <label>Kunde<input name="customer" value="{{ inq.customer or '' }}"></label>
+    <label>Produkttyp<input name="product_type" value="{{ inq.product_type or '' }}"></label>
+    <label>DN<input name="dn" value="{{ inq.dn|de_auto('') }}"></label>
+    <label>PS [bar]<input name="design_pressure" value="{{ inq.design_pressure|de_auto('') }}"></label>
+    <label>Werkstoff<input name="material" value="{{ inq.material or '' }}"></label>
+    <label>Filterelemente<input name="filter_elements" value="{{ inq.filter_elements|de_auto('') }}"></label>
+    <label>Filterfläche [m²]<input name="filter_area" value="{{ inq.filter_area|de_auto('') }}"></label>
+    <label>Gewicht [kg]<input name="weight" value="{{ inq.weight|de_auto('') }}"></label>
+    <label>Stückzahl<input name="quantity" value="{{ inq.quantity|de_auto('') }}"></label>
+    <div class="form-actions"><button class="btn" type="submit">Eckdaten speichern und neu suchen</button></div>
+  </form>
+</details>
+
+<section class="card">
+  <h2>1. Ähnliche Apparate</h2>
+  {% if matches %}
+  <div class="table-wrap"><table class="table compact">
+    <thead><tr><th>Vorlage</th><th>Angebot</th><th>Produkttyp</th><th>Eckdaten</th><th class="num">Ähnlichkeit</th><th class="num">Angebotspreis</th><th class="num">€/kg</th><th class="num">Fertigung [h]</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for m in matches %}{% set d = m.data %}
+      <tr class="{{ 'sum-row' if item and item.id == m.item_id }}">
+        <td>{% if item and item.id == m.item_id %}<strong>✓ gewählt</strong>{% else %}<a class="btn small" href="?ref={{ m.item_id }}">als Vorlage</a>{% endif %}</td>
+        <td class="nowrap"><a href="/angebote/{{ d.offer_id }}" target="_blank">{{ d.offer_number }}</a> · Pos. {{ d.position }}</td>
+        <td>{{ d.product_type or '–' }}</td>
+        <td class="small">DN {{ d.dn|de_auto }} · {{ d.material or '–' }} · {{ d.filter_elements|de_auto }} El. · {{ d.weight|de_auto }} kg</td>
+        <td class="num">{{ (m.similarity * 100)|de_num(0) }} %{% if d.low_coverage %} <span class="badge warn">wenig Daten</span>{% endif %}</td>
+        <td class="num">{{ d.offer_price|de_num(2) }}</td><td class="num">{{ d.price_per_kg|de_num(2) }}</td><td class="num">{{ d.manufacturing_hours|de_num(1) }}</td>
+        <td>{{ d.status or '–' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">Keine vergleichbaren Apparate gefunden – Eckdaten ergänzen oder Vorkalkulation ohne Vorlage ausfüllen.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>2. Materialauszug {% if item %}<span class="hint">Vorlage: {{ item.offer.offer_number }} Pos. {{ item.position_number }} – {{ item.description or item.product_type }}</span>{% endif %}</h2>
+  {% if lines %}
+  <p class="hint">Anzahl je Gehäuse. „Ansatz“ ist mit dem Median aus der Materialpreis-Datenbank vorbelegt (sonst Preis der Vorlage) und änderbar.
+    Kosten = Ansatz × Anzahl × Länge (falls €/m) + APZ + Bearbeitung (wie Spalte „Gesamtkosten“ der Vorlage).</p>
+  <p class="inline-form small"><span>Ansatz setzen auf:</span>
+    <button class="btn small" type="button" data-set-price="median">Median aller Angebote</button>
+    <button class="btn small" type="button" data-set-price="then">Preise der Vorlage</button>
+    <button class="btn small" type="button" data-set-price="latest">zuletzt angesetzte Preise</button></p>
+  <div class="table-wrap"><table class="table compact" id="mat-table">
+    <thead><tr><th></th><th>Benennung</th><th>Abmaße</th><th>Werkstoff</th><th class="num">Anzahl</th><th class="num">Länge [m]</th>
+      <th class="num">Vorlage</th><th class="num">Median (n)</th><th class="num">zuletzt</th><th class="num">Ansatz</th><th>Einh.</th><th class="num">APZ</th><th class="num">Bearb.</th><th class="num">Kosten</th></tr></thead>
+    <tbody>
+    {% for l in lines %}
+      <tr data-i="{{ l.i }}" data-then="{{ l.price_then if l.price_then is not none else '' }}" data-median="{{ l.median if l.median is not none else '' }}" data-latest="{{ l.latest if l.latest is not none else '' }}">
+        <td><input type="checkbox" class="m-inc" {{ 'checked' if l.include }} title="in Summe übernehmen"></td>
+        <td>{{ l.description }}<div class="small muted">{{ l.category }}</div></td>
+        <td class="nowrap">{{ l.dimensions or '' }}</td><td>{{ l.material or '' }}</td>
+        <td class="num"><input class="m-qty num-in" value="{{ l.qty|de_auto('') }}" size="4"></td>
+        <td class="num"><input class="m-len num-in" value="{{ l.length|de_auto('') }}" size="4"></td>
+        <td class="num">{{ l.price_then|de_num(2) }}</td>
+        <td class="num">{% if l.n %}{{ l.median|de_num(2) }} <span class="small muted">({{ l.n }})</span>{% else %}–{% endif %}</td>
+        <td class="num">{{ l.latest|de_num(2) }}</td>
+        <td class="num"><input class="m-price num-in" value="{{ l.price|de_num(2, '') }}" size="7"></td>
+        <td>{{ l.unit }}</td>
+        <td class="num"><input class="m-apz num-in" value="{{ l.apz|de_num(2, '') }}" size="5"></td>
+        <td class="num"><input class="m-mfg num-in" value="{{ l.mfg|de_num(2, '') }}" size="5"></td>
+        <td class="num m-cost">–</td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr class="sum-row"><td colspan="13">Summe Materialauszug je Gehäuse</td><td class="num" id="mat-sum">–</td></tr></tfoot>
+  </table></div>
+  <label class="inline small"><input type="checkbox" id="use-mat-sum" {{ 'checked' if use_material_sum }}> Materialkosten der Vorkalkulation = Summe Materialauszug</label>
+  {% else %}
+  <p class="muted">{% if item %}Für die Vorlage ist kein Materialauszug gespeichert.{% else %}Keine Vorlage gewählt.{% endif %} Materialkosten bitte direkt in der Vorkalkulation eintragen.
+    <a href="/material" target="_blank">Materialpreise nachschlagen →</a></p>
+  {% endif %}
+</section>
+
+<div class="grid-2">
+<section class="card">
+  <h2>3. Vorkalkulation (HETA-Vorlage R05)</h2>
+  <form id="calc-form" class="grid-form two">
+    {% for grp in ["Kosten", "Sätze", "Hebesätze"] %}
+      <div class="form-actions small muted"><strong>{{ grp }}</strong></div>
+      {% for key, label, group in fields if group == grp %}
+      <label>{{ label }}<input name="{{ key }}" data-rate="{{ '1' if key in rate_fields else '' }}" inputmode="decimal"
+        value="{% if inputs.get(key) is not none %}{{ inputs[key]|de_auto }}{% endif %}"></label>
+      {% endfor %}
+    {% endfor %}
+  </form>
+  <p class="hint">Startwerte aus der gewählten Vorlage (Stunden, Fremdleistungen, Hebesätze). Formeln wie in der Excel-Vorlage R05, Werte je Gehäuse.</p>
+</section>
+<section class="card">
+  <h2>Ergebnis</h2>
+  <table class="table compact" id="calc-table"><thead><tr><th>Position</th><th class="num">Betrag [€]</th></tr></thead><tbody></tbody></table>
+  <div class="kpis small-kpis">
+    <div class="kpi"><div class="kpi-label">Selbstkosten</div><div class="kpi-value" id="r-total">–</div></div>
+    <div class="kpi"><div class="kpi-label">Preis FCA je Gehäuse</div><div class="kpi-value" id="r-price">–</div></div>
+    <div class="kpi"><div class="kpi-label">€/kg</div><div class="kpi-value" id="r-kg">–</div></div>
+    {% if inq.quantity and inq.quantity > 1 %}<div class="kpi"><div class="kpi-label">× {{ inq.quantity }} Stk</div><div class="kpi-value" id="r-qty" data-qty="{{ inq.quantity }}">–</div></div>{% endif %}
+  </div>
+  <p id="r-missing" class="hint"></p>
+  {% if summary.price or summary.price_per_kg %}
+  <h3>Vergleich mit ähnlichen Apparaten</h3>
+  <table class="kv">
+    {% if summary.price %}<tr><th>Angebotspreis (min / Median / max)</th><td class="num">{{ summary.price[0]|de_num(0) }} / <strong>{{ summary.price[1]|de_num(0) }}</strong> / {{ summary.price[2]|de_num(0) }} €</td></tr>{% endif %}
+    {% if summary.price_per_kg %}<tr><th>€/kg (min / Median / max)</th><td class="num">{{ summary.price_per_kg[0]|de_num(2) }} / <strong>{{ summary.price_per_kg[1]|de_num(2) }}</strong> / {{ summary.price_per_kg[2]|de_num(2) }}</td></tr>{% endif %}
+    {% if summary.hours %}<tr><th>Fertigungsstunden (min / Median / max)</th><td class="num">{{ summary.hours[0]|de_num(0) }} / <strong>{{ summary.hours[1]|de_num(0) }}</strong> / {{ summary.hours[2]|de_num(0) }} h</td></tr>{% endif %}
+  </table>
+  <p class="hint">Historische Preise sind Kalkulations- bzw. Angebotswerte, keine Zusage. Unterschiede in PS, Prüfumfang oder Einbauten beachten.</p>
+  {% endif %}
+</section>
+</div>
+
+<section class="card">
+  <h2>4. Speichern</h2>
+  <form method="post" action="/anfragen/{{ inq.id }}/speichern" id="save-form" class="form-row">
+    <input type="hidden" name="calc_inputs_json" id="calc_inputs_json">
+    <input type="hidden" name="material_json" id="material_json">
+    <input type="hidden" name="ref" value="{{ item.id if item else '' }}">
+    <label>Notizen (Annahmen, offene Fragen, Lieferantenanfragen)<textarea name="notes" rows="4">{{ inq.notes or '' }}</textarea></label>
+    <div class="inline-form">
+      <select name="status">{% for s in statuses %}<option {{ 'selected' if inq.status == s }}>{{ s }}</option>{% endfor %}</select>
+      <button class="btn primary" type="submit">Anfrage speichern</button>
+      <button class="btn" type="button" onclick="window.print()">Drucken</button>
+    </div>
+  </form>
+  <form method="post" action="/anfragen/{{ inq.id }}/loeschen" onsubmit="return confirm('Anfrage wirklich löschen?')"><button class="btn danger small" type="submit">Anfrage löschen</button></form>
+  <p class="hint">Gespeichert wird nur die Anfrage; importierte Angebote und Originaldateien bleiben unverändert. Die eigentliche Kalkulation erfolgt weiterhin in der Excel-Vorlage.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script>HETA.initInquiry();</script>{% endblock %}

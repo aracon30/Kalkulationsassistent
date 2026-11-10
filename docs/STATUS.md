@@ -181,3 +181,25 @@ oder „Einzelzeilen“, CSV-Export. In der Angebotsansicht je Position aufklapp
 Getestet an SE-13705.26: 48 Bauteilzeilen, Summen stimmen, keine Prüfhinweise.
 Offen: Bedeutung der Spalte „APZ Kosten“ (vermutlich Abnahmeprüfzeugnis) bestätigen; Einzelpreise
 sind Kalkulationsansätze (Schätz-/Erfahrungswerte), keine Einkaufspreise.
+
+## 9. Neue Anfrage / Vorkalkulation (0.4.0)
+
+Die Kalkulationssimulation (Beispielschema) wurde entfernt und durch „Neue Anfrage“ ersetzt
+(Tabelle `inquiries`, Migration 0005; Tabelle `simulations` entfällt):
+
+1. Eckdaten (Produkttyp, DN, PS, Werkstoff, Elemente, Filterfläche, Gewicht, Stückzahl).
+2. Fünf ähnliche Apparate; einer wird als Vorlage gewählt (Standard: der ähnlichste).
+3. Materialauszug der Vorlage je Gehäuse: Preis der Vorlage, Median/Anzahl und zuletzt angesetzter
+   Preis aus der Materialpreis-Datenbank; Ansatz (Standard: Median, wenn ≥ 2 Werte), Anzahl, Länge,
+   APZ und Bearbeitungskosten änderbar; Umschalter Median / Vorlage / zuletzt.
+   Mit „Preise der Vorlage“ ergibt sich exakt „Material Gesamtkosten“ des Originals (geprüft an SE-13705.26).
+4. Vorkalkulation nach der HETA-Vorlage R05 (`app/services/heta_calc.py`, Sätze in
+   `config/heta_kalkulation.yaml`): reproduziert Selbstkosten und Preis von SE-13705.26 auf den Cent.
+   Vorbelegung aus der Vorlage (Stunden, Konstruktion, Dokumentation, Third Party, ZFP, Hebesätze).
+5. Vergleichsrahmen (min/Median/max von Preis, €/kg, Stunden der ähnlichen Apparate), Notizen,
+   Status (in Arbeit / angeboten / verworfen), Druckansicht.
+
+Preisstatistik „gleiches Bauteil“ = Kategorie + Form + Abmaße + Werkstoff + Preiseinheit; ohne
+Abmaße zusätzlich die Benennung (sonst würden z. B. Prallblech und Standfuß vermischt).
+Grenzen: Teile mit gleicher Benennung, aber anderer Größe ohne Abmaßangabe (z. B. Davit für DN300
+und DN1000) werden weiterhin zusammengefasst – Median bei solchen Teilen prüfen.

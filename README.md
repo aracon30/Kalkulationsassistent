@@ -67,7 +67,7 @@ python -m pytest
 
 93 automatisierte Tests: Ordnerscan, Angebotsnummern, UNC-Pfade, Klassifizierung, Excel-Import,
 Mehrpositionsangebote, Formel-Caches (fehlend/veraltet), Dubletten, Importwiederholung,
-Transaktionen/Abbruch, Kalkulationslogik, Ähnlichkeitssuche, KI-Provider-Auswahl, Weboberfläche,
+Transaktionen/Abbruch, Vorkalkulation (HETA-Logik), Ähnlichkeitssuche, Anfragen, Materialpreise, KI-Provider-Auswahl, Weboberfläche,
 Sicherheit (Host-/Origin-Prüfung, Dateizugriff nur per ID), Backup.
 Die Tests verwenden ausschließlich synthetische Dateien aus `tests/factory.py`.
 
@@ -94,13 +94,14 @@ heta-kalkulationsassistent/
 │   │   ├── jobs.py             Hintergrundjobs mit Abbruch
 │   │   ├── validation.py       Plausibilitätsregeln, Validierungsstatus
 │   │   ├── normalize.py        Werkstoffe, Produkttypen, Temperaturen, Datum
-│   │   ├── calculation_engine.py  konfigurierbare Zuschlagskalkulation
+│   │   ├── heta_calc.py        Vorkalkulation nach HETA-Vorlage R05
+│   │   ├── inquiry.py          Neue Anfrage: ähnliche Apparate, Materialauszug, Vorbelegung
 │   │   └── similarity.py       gewichtete, erklärbare Ähnlichkeitssuche
 │   ├── ai/                     Provider-Schnittstelle (None, Mock, Ollama, Azure Foundry, M365 vorbereitet)
 │   ├── templates/              Jinja2-Oberfläche (deutsch)
 │   └── static/                 CSS, Vanilla JS
 ├── import_profiles/            YAML-Importprofile
-├── config/                     Zuschlagsschema, Ähnlichkeitsgewichte
+├── config/                     HETA-Zuschlagssätze, Ähnlichkeitsgewichte
 ├── alembic/                    Datenbankmigrationen
 ├── scripts/                    Demo-Daten, Abgleich mit Referenzdateien
 ├── tests/                      pytest

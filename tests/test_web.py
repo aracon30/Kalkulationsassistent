@@ -19,7 +19,7 @@ def imported(client, offer_base):
 
 
 def test_pages_render_empty(client):
-    for url in ["/", "/import", "/dokumente", "/angebote", "/pruefung", "/pruefung/protokoll", "/aehnlichkeit", "/simulation", "/einstellungen"]:
+    for url in ["/", "/import", "/dokumente", "/angebote", "/pruefung", "/pruefung/protokoll", "/aehnlichkeit", "/anfragen", "/einstellungen"]:
         r = client.get(url)
         assert r.status_code == 200, url
         assert "HETA" in r.text
@@ -82,13 +82,6 @@ def test_review_correction_updates_target(client, imported):
     c = s.scalars(select(Correction).where(Correction.field_name == "weight")).one()
     assert c.old_value == "410.0" and c.new_value == "1234.5" and c.reason == "Wiegeprotokoll"
     s.close()
-
-
-def test_simulation_api(client):
-    r = client.post("/api/simulation/berechnen", json={"values": {"material_cost": 1000, "manufacturing_hours": 10}})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["sales_price"] > 0 and body["scheme_validated"] is False
 
 
 def test_cross_origin_post_blocked(client):

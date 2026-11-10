@@ -2,7 +2,7 @@
 
 Grundsätze:
 - Fehlende Werte sind NULL, niemals 0.
-- Originalwerte (Import) und Simulationen sind strikt getrennt.
+- Originalwerte (Import) und Anfragen/Vorkalkulationen sind strikt getrennt.
 - Jeder importierte Wert besitzt über ``extraction_values`` eine Quellenreferenz.
 """
 from __future__ import annotations
@@ -364,18 +364,31 @@ class Correction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class Simulation(Base):
-    """Kalkulationssimulationen – strikt getrennt von importierten Originalwerten."""
-    __tablename__ = "simulations"
+class Inquiry(Base):
+    """Neue Kundenanfrage mit Vorkalkulation – getrennt von importierten Originaldaten."""
+    __tablename__ = "inquiries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255))
-    offer_item_id: Mapped[int | None] = mapped_column(ForeignKey("offer_items.id", ondelete="SET NULL"))
-    base_calculation_id: Mapped[int | None] = mapped_column(ForeignKey("calculations.id", ondelete="SET NULL"))
-    scheme_id: Mapped[str | None] = mapped_column(String(64))
-    inputs_json: Mapped[str] = mapped_column(Text)
-    results_json: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(255))
+    customer: Mapped[str | None] = mapped_column(String(255))
+    product_type: Mapped[str | None] = mapped_column(String(64))
+    dn: Mapped[float | None] = mapped_column(Float)
+    design_pressure: Mapped[float | None] = mapped_column(Float)
+    material: Mapped[str | None] = mapped_column(String(64))
+    filter_elements: Mapped[int | None] = mapped_column(Integer)
+    filter_area: Mapped[float | None] = mapped_column(Float)
+    weight: Mapped[float | None] = mapped_column(Float)
+    quantity: Mapped[int | None] = mapped_column(Integer)
+    reference_item_id: Mapped[int | None] = mapped_column(ForeignKey("offer_items.id", ondelete="SET NULL"))
+    calc_inputs_json: Mapped[str | None] = mapped_column(Text)      # Eingaben der Vorkalkulation
+    material_json: Mapped[str | None] = mapped_column(Text)         # angepasster Materialauszug
+    result_price: Mapped[float | None] = mapped_column(Float)       # Preis FCA der Vorkalkulation
+    notes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="in Arbeit")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    reference_item: Mapped[OfferItem | None] = relationship()
 
 
 class AIRequestLog(Base):

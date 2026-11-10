@@ -1,20 +1,16 @@
-"""Ähnlichkeitssuche und Kalkulationssimulation."""
+"""Ähnlichkeitssuche."""
 from __future__ import annotations
 
-import json
-
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import Calculation, Offer, OfferItem, Simulation
-from app.services.calculation_engine import calculate, inputs_from_calculation, load_scheme
+from app.models import OfferItem
 from app.services.excel_reader import parse_number
 from app.services.similarity import load_config, rank
-from app.web import redirect, templates
+from app.web import templates
 
 router = APIRouter()
 
@@ -52,58 +48,3 @@ def similarity_page(request: Request, db: Session = Depends(get_db), product_typ
     types = [t for (t,) in db.execute(select(OfferItem.product_type).distinct()) if t]
     return templates.TemplateResponse(request, "similarity.html", {"nav": "aehnlichkeit", "raw": raw, "matches": matches, "config": config,
                                                                    "types": types, "searched": bool(query)})
-
-
-class SimInput(BaseModel):
-    values: dict[str, float | str | None]
-
-
-@router.get("/simulation")
-def simulation_page(request: Request, position: int | None = None, db: Session = Depends(get_db)):
-    scheme = load_scheme(get_settings().simulation_scheme_file)
-    item = db.get(OfferItem, position) if position else None
-    calc = item.current_calculation if item else None
-    prefill = dict(scheme.defaults)
-    prefill.update(inputs_from_calculation(calc, item))
-    result = calculate(scheme, prefill)
-    sims = list(db.scalars(select(Simulation).order_by(Simulation.id.desc()).limit(20)))
-    items = list(db.scalars(select(OfferItem).join(Offer).options(selectinload(OfferItem.offer)).order_by(Offer.offer_number.desc(), OfferItem.position_number)))
-    return templates.TemplateResponse(request, "simulation.html", {"nav": "simulation", "scheme": scheme, "prefill": prefill,
-                                                                   "result": result, "item": item, "calc": calc, "sims": sims,
-                                                                   "items": items})
-
-
-@router.post("/api/simulation/berechnen")
-def simulate(data: SimInput):
-    scheme = load_scheme(get_settings().simulation_scheme_file)
-    return calculate(scheme, data.values).to_dict()
-
-
-@router.post("/simulation/speichern")
-def save_simulation(name: str = Form(...), inputs_json: str = Form(...), position: str = Form(""), db: Session = Depends(get_db)):
-    scheme = load_scheme(get_settings().simulation_scheme_file)
-    try:
-        inputs = json.loads(inputs_json)
-        if not isinstance(inputs, dict):
-            raise ValueError
-    except ValueError:
-        raise HTTPException(400, "Ungültige Eingaben") from None
-    result = calculate(scheme, inputs)
-    item = db.get(OfferItem, int(position)) if position.isdigit() else None
-    calc = item.current_calculation if item else None
-    # Simulationen werden separat gespeichert – Originalkalkulationen bleiben unverändert.
-    db.add(Simulation(name=name.strip()[:255] or "Simulation", offer_item_id=item.id if item else None,
-                      base_calculation_id=calc.id if calc else None, scheme_id=scheme.id,
-                      inputs_json=json.dumps(result.inputs, ensure_ascii=False), results_json=json.dumps(result.to_dict(), ensure_ascii=False, default=str)))
-    db.commit()
-    return redirect("/simulation", position=item.id if item else None)
-
-
-@router.get("/simulation/{sim_id}")
-def show_simulation(sim_id: int, request: Request, db: Session = Depends(get_db)):
-    sim = db.get(Simulation, sim_id)
-    if not sim:
-        raise HTTPException(404, "Simulation nicht gefunden")
-    base = db.get(Calculation, sim.base_calculation_id) if sim.base_calculation_id else None
-    return templates.TemplateResponse(request, "simulation_detail.html", {"nav": "simulation", "sim": sim, "result": json.loads(sim.results_json),
-                                                                          "base": base})

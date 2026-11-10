@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Neue Anfrage – HETA{% endblock %}
+{% block content %}
+<h1>Neue Anfrage</h1>
+<section class="card">
+  <h2>Eckdaten der Anfrage</h2>
+  <form method="post" action="/anfragen" class="grid-form">
+    <label>Bezeichnung<input name="title" value="{{ pre.title or '' }}" placeholder="z. B. Kunde X – Kerzenfilter DN400"></label>
+    <label>Kunde<input name="customer" value=""></label>
+    <label>Produkttyp<input name="product_type" list="types" value="{{ pre.product_type or '' }}" placeholder="Kerzenfilter"></label>
+    <datalist id="types">{% for t in types %}<option>{{ t }}</option>{% endfor %}</datalist>
+    <label>DN<input name="dn" value="{{ pre.dn|de_auto('') }}" inputmode="decimal"></label>
+    <label>PS [bar]<input name="design_pressure" value="" inputmode="decimal"></label>
+    <label>Werkstoff<input name="material" value="{{ pre.material or '' }}" placeholder="1.4404"></label>
+    <label>Filterelemente<input name="filter_elements" value="{{ pre.filter_elements|de_auto('') }}" inputmode="numeric"></label>
+    <label>Filterfläche [m²]<input name="filter_area" value="" inputmode="decimal"></label>
+    <label>Gewicht [kg]<input name="weight" value="{{ pre.weight|de_auto('') }}" inputmode="decimal"></label>
+    <label>Stückzahl<input name="quantity" value="1" inputmode="numeric"></label>
+    <input type="hidden" name="ref" value="{{ pre.ref or '' }}">
+    <div class="form-actions"><button class="btn primary" type="submit">Anfrage anlegen und ähnliche Apparate suchen</button></div>
+  </form>
+  <p class="hint">Nicht alle Felder sind nötig. Die Suche nutzt, was angegeben ist; fehlende Merkmale werden nicht als 0 gewertet.</p>
+</section>
+<section class="card">
+  <h2>Gespeicherte Anfragen</h2>
+  <table class="table compact">
+    <tr><th>Bezeichnung</th><th>Kunde</th><th>Eckdaten</th><th>Vorlage</th><th class="num">Vorkalkulation [€]</th><th>Status</th><th>Geändert</th></tr>
+    {% for r in rows %}
+    <tr><td><a href="/anfragen/{{ r.id }}">{{ r.title }}</a></td><td>{{ r.customer or '–' }}</td>
+      <td class="small">{{ r.product_type or '?' }}{% if r.dn %} · DN {{ r.dn|de_auto }}{% endif %}{% if r.material %} · {{ r.material }}{% endif %}{% if r.filter_elements %} · {{ r.filter_elements }} El.{% endif %}</td>
+      <td class="small">{% if r.reference_item %}{{ r.reference_item.offer.offer_number }} Pos. {{ r.reference_item.position_number }}{% else %}–{% endif %}</td>
+      <td class="num">{{ r.result_price|de_num(2) }}</td><td>{{ r.status }}</td><td class="nowrap">{{ r.updated_at|de_date }}</td></tr>
+    {% else %}<tr><td colspan="7" class="muted">Noch keine Anfragen.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

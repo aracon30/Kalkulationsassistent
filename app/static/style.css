@@ -152,3 +152,11 @@ pre.log { background: #f7f8fa; border: 1px solid var(--border); padding: 10px; m
 }
 
 #sim-table td.num { white-space: nowrap; }
+
+.num-in { width: 6.5em; text-align: right; padding: 3px 5px; }
+#calc-table td.num { white-space: nowrap; }
+@media print {
+  .topbar, .sidebar, .btn, form[action$="loeschen"], details:not([open]) > form { display: none !important; }
+  .content { padding: 0; }
+  .card { break-inside: avoid; border: 0; }
+}

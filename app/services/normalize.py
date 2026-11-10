@@ -236,3 +236,21 @@ def estimate_weight(category: str, dims: dict, material: str | None, length_m: f
         if category == "Blech/Flachstahl" and dims.get("outer_diameter") and dims.get("second"):  # Ronde Ø x t
             return math.pi / 4 * dims["outer_diameter"] ** 2 * dims["second"] * 1e-9 * rho, "kg/Stk"
     return None, None
+
+
+
+def price_group_key(category: str | None, form: str | None, dimensions: str | None, material: str | None,
+                    price_unit: str | None, description: str | None) -> tuple:
+    """Schlüssel für "gleiches Bauteil" in der Preisstatistik.
+
+    Kategorie + Form + Abmaße + Werkstoff + Preiseinheit. Ohne Abmaße wäre das zu grob
+    (Prallblech, Standfuß und Erdungslasche wären "gleich") – dann zählt zusätzlich die Benennung
+    (ohne Stutzenbezeichnungen wie N1/N2 und ohne Zahlen).
+    """
+    norm = lambda x: re.sub(r"\s+", " ", (x or "").strip().lower())  # noqa: E731
+    dims = (dimensions or "").replace(" ", "").lower()
+    desc = ""
+    if not dims:
+        desc = re.sub(r"\bn\d+([/+]n?\d+)*\b|\d+([.,]\d+)?", "", norm(description))
+        desc = re.sub(r"\s+", " ", desc).strip()
+    return (category or "", norm(form), dims, (material or "").lower(), price_unit or "", desc)

@@ -370,7 +370,7 @@ def test_heta_r05_material_lines(db, env):
     scan_and_inventory(db, str(env / "K6"))
     run_import(db)
     lines = {(l.offer_item.position_number, l.description): l for l in db.scalars(select(MaterialLine))}
-    assert len(lines) == 7  # Positionstitel wird übersprungen
+    assert len(lines) == 8  # Positionstitel wird übersprungen
     mantel = lines[(1, "Behältermantel")]
     assert (mantel.category, mantel.outer_diameter, mantel.wall_thickness, mantel.material) == ("Rohr", 323.9, 4.5, "1.4404")
     assert (mantel.unit_price, mantel.price_unit, mantel.length_m, mantel.apz_cost, mantel.cost) == (220, "€/m", 1.7, 35, 409)
@@ -387,4 +387,4 @@ def test_heta_r05_material_lines(db, env):
     assert not db.scalars(select(ReviewIssue).where(ReviewIssue.code == "summe_abweichend")).all()
     # Neuimport ersetzt die Zeilen (keine Dubletten)
     run_import(db, force=True)
-    assert db.scalar(select(func.count(MaterialLine.id))) == 7
+    assert db.scalar(select(func.count(MaterialLine.id))) == 8

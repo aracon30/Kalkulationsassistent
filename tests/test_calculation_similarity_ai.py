@@ -3,62 +3,7 @@ import asyncio
 import pytest
 
 from app.config import get_settings
-from app.services.calculation_engine import Scheme, calculate, load_scheme
 from app.services.similarity import load_config, rank
-
-
-@pytest.fixture()
-def scheme(env):
-    return load_scheme(get_settings().simulation_scheme_file)
-
-
-def test_scheme_is_marked_unvalidated(scheme):
-    assert scheme.validated is False
-
-
-def test_calculation_distinguishes_base_rate_amount(scheme):
-    r = calculate(scheme, {"material_cost": 10000, "manufacturing_hours": 100, "manufacturing_hourly_rate": 60,
-                           "engineering_hours": 10, "engineering_hourly_rate": 80, "material_overhead_rate": 0.1,
-                           "sales_overhead_rate": 0.05, "risk_profit_rate": 0.1, "weight": 500})
-    lines = {l.key: l for l in r.lines}
-    assert lines["material_overhead"].base == 10000 and lines["material_overhead"].rate == 0.1 and lines["material_overhead"].amount == 1000
-    production = 10000 + 1000 + 0 + 6000 + 0 + 800
-    assert lines["production_cost"].amount == pytest.approx(production)
-    assert r.total_cost == pytest.approx(production * 1.05)
-    assert r.profit == pytest.approx(production * 1.05 * 0.1)
-    assert r.sales_price == pytest.approx(production * 1.05 * 1.1)
-    assert r.margin == pytest.approx(r.profit / r.sales_price)          # Marge bezogen auf Verkaufspreis
-    assert r.markup_on_cost == pytest.approx(0.1)                       # Zuschlag bezogen auf Selbstkosten
-    assert r.price_per_kg == pytest.approx(r.sales_price / 500)
-
-
-def test_missing_inputs_are_not_zero(scheme):
-    r = calculate(scheme, {"manufacturing_hours": 80})  # Materialkosten fehlen
-    assert r.sales_price is None and r.total_cost is None
-    assert "material_cost" in r.missing_inputs
-    assert not r.complete
-
-
-def test_scheme_validation_rejects_forward_reference():
-    with pytest.raises(ValueError):
-        Scheme(id="x", name="x", lines=[{"key": "a", "label": "A", "type": "sum", "of": ["b"]},
-                                        {"key": "b", "label": "B", "type": "input", "input": "b"}])
-
-
-def test_simulation_does_not_touch_original(db, offer_base):
-    from sqlalchemy import select
-    from app.models import Calculation
-    from app.services.calculation_engine import inputs_from_calculation
-    from app.services.import_service import run_import, scan_and_inventory
-    scan_and_inventory(db, str(offer_base)); run_import(db)
-    calc = db.scalars(select(Calculation)).first()
-    before = calc.offer_price
-    inputs = inputs_from_calculation(calc, calc.offer_item)
-    inputs["material_cost"] = 1.0
-    calculate(load_scheme(get_settings().simulation_scheme_file), inputs)
-    db.refresh(calc)
-    assert calc.offer_price == before
-    assert inputs_from_calculation(calc)["material_overhead_rate"] == pytest.approx(0.10)
 
 
 CANDIDATES = [

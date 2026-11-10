@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.database import get_db
 from app.models import Calculation, Document, MaterialLine, Offer, OfferItem
 from app.services.excel_reader import parse_number
+from app.services.normalize import price_group_key
 from app.web import templates
 
 router = APIRouter()
@@ -53,13 +54,13 @@ def _group(lines: list[MaterialLine]) -> list[dict]:
     for l in lines:
         if l.unit_price is None:
             continue
-        dims = (l.dimensions or "").replace(" ", "").lower()
-        groups[(l.category, dims, l.material or l.material_raw or "", l.price_unit)].append(l)
+        groups[price_group_key(l.category, l.form, l.dimensions, l.material or l.material_raw, l.price_unit, l.description)].append(l)
     out = []
-    for (cat, _, mat, unit), items in groups.items():
+    for key, items in groups.items():
+        cat, unit, mat = key[0], key[4], items[0].material or items[0].material_raw or ""
         prices = sorted(x.unit_price for x in items)
         latest = max(items, key=lambda x: (x.offer_item.offer.offer_date or x.offer_item.offer.created_at.date(), x.id))
-        out.append({"category": cat, "dimensions": items[0].dimensions, "material": mat, "unit": unit, "n": len(items),
+        out.append({"category": cat, "form": items[0].form, "dimensions": items[0].dimensions, "material": mat, "unit": unit, "n": len(items),
                     "min": prices[0], "median": statistics.median(prices), "max": prices[-1],
                     "latest_price": latest.unit_price, "latest_offer": latest.offer_item.offer, "example": items[0].description,
                     "price_per_kg": statistics.median([x.price_per_kg for x in items if x.price_per_kg]) if any(x.price_per_kg for x in items) else None})
