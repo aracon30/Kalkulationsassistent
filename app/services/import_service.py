@@ -256,7 +256,9 @@ def pending_documents(session: Session, force: bool = False, base_dir: str | Non
     """Neue Dokumente; mit ``retry_failed`` auch fehlgeschlagene (z. B. zuvor gesperrte), mit ``force`` alle."""
     q = select(Document).where(Document.is_current.is_(True), Document.document_type.in_(IMPORTABLE_TYPES))
     if force:
-        q = q.where(Document.import_status.in_([ImportStatus.NEU, ImportStatus.IMPORTIERT, ImportStatus.FEHLER]))
+        # auch übersprungene Dateien (Vorlage unbekannt, Kopie …) neu bewerten – nicht aber Duplikate
+        q = q.where(Document.import_status.in_([ImportStatus.NEU, ImportStatus.IMPORTIERT, ImportStatus.FEHLER, ImportStatus.IGNORIERT]),
+                    Document.duplicate_of_id.is_(None))
     elif retry_failed:
         q = q.where(Document.import_status.in_([ImportStatus.NEU, ImportStatus.FEHLER]))
     else:

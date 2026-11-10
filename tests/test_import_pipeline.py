@@ -535,3 +535,16 @@ def test_helper_rules_for_numbers_walls_codes():
     assert _code_family("AD2000-MERKBLATT") == _code_family("AD 2000") and _code_family("DGRL 2014/68/EU") is None
     m = HETA_DRAWING_CODE_RE.search("513-F066_KFW-3-101.11-014.pdf")
     assert m and (m.group("prefix"), m.group("size")) == ("KFW", "101")
+
+
+def test_forced_reimport_reevaluates_previously_skipped_files(db, env):
+    from tests.factory import make_service_calc
+    folder = env / "K6" / "DE-99930.26"
+    make_service_calc(folder / "DE-99930.26_Kalkulation_Service.xlsx")
+    scan_and_inventory(db, str(env / "K6"))
+    doc = db.scalars(select(Document)).one()
+    doc.import_status, doc.import_message = ImportStatus.IGNORIERT, "Vorlage nicht erkannt (alter Stand)"
+    db.commit()
+    run_import(db, force=True)
+    db.refresh(doc)
+    assert doc.import_status == ImportStatus.IMPORTIERT and doc.profile_id == "serviceeinsatz"

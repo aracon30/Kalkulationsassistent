@@ -26,7 +26,8 @@ Validierungsstatus jedes Wertes:
 3. **Import starten**:
    - *Nur neue/geänderte Dateien* (Standard)
    - *Neue + fehlgeschlagene* – z. B. nachdem eine gesperrte Excel-Datei geschlossen wurde
-   - *Alle erneut importieren* – ersetzt die abgeleiteten Daten der Dateien (keine Dubletten)
+   - *Alle erneut importieren* – ersetzt die abgeleiteten Daten der Dateien (keine Dubletten) und bewertet
+     auch zuvor übersprungene Dateien neu (z. B. nach einem Update mit neuen Vorlagen)
 4. Fortschritt wird live angezeigt; der Browser bleibt bedienbar. **Abbrechen** stoppt nach der
    aktuellen Datei; das gerade bearbeitete Angebot wird vollständig zurückgerollt.
 5. Je Job: **Protokoll** (mit Filter „Nur Fehler“) und **Importbericht als CSV** (Excel-kompatibel, `;`).
