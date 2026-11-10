@@ -332,8 +332,8 @@ def _issue(session: Session, code: str, message: str, severity: str = "warnung",
 
 def _clear_document_data(session: Session, doc: Document) -> None:
     """Für erneuten (erzwungenen) Import: abgeleitete Daten dieses Dokuments entfernen."""
-    from app.models import MaterialLine
-    for model in (ExtractionValue, MaterialLine, ManufacturingOperation, Calculation):
+    from app.models import MaterialLine, TradeItem
+    for model in (ExtractionValue, MaterialLine, TradeItem, ManufacturingOperation, Calculation):
         for row in session.scalars(select(model).where(model.document_id == doc.id)):
             session.delete(row)
     for row in session.scalars(select(ReviewIssue).where(ReviewIssue.document_id == doc.id, ReviewIssue.status == "offen")):
@@ -356,7 +356,9 @@ def _reset_offer(session: Session, offer: Offer) -> None:
         session.delete(row)
     for d in session.scalars(select(Document).where(Document.offer_id == offer.id)):
         d.offer_item_id = None
-    from app.models import MaterialLine
+    from app.models import MaterialLine, TradeItem
+    for row in session.scalars(select(TradeItem).where(TradeItem.offer_id == offer.id)):
+        session.delete(row)
     item_ids = list(session.scalars(select(OfferItem.id).where(OfferItem.offer_id == offer.id)))
     if item_ids:
         for row in session.scalars(select(MaterialLine).where(MaterialLine.offer_item_id.in_(item_ids))):
@@ -484,6 +486,8 @@ def _import_workbook(session: Session, offer: Offer, doc: Document, ex: Workbook
             elif validation.values_conflict(current, e.value):
                 _issue(session, "widerspruch", f"Angebotskopf: {name} widersprüchlich – '{current}' vs. '{e.value}' ({doc.file_name})", "warnung", offer=offer, document=doc, value=ev)
 
+    if ex.trade_lines:
+        _store_trade_items(session, offer, doc, ex.trade_lines)
     for name, value in ex.constants.items():
         if name in OFFER_FIELDS and getattr(offer, name) is None:
             setattr(offer, name, value)  # Vorgabe der Vorlage (z. B. Währung), im Profil dokumentiert
@@ -600,6 +604,34 @@ def _store_material_lines(session: Session, item: OfferItem, calc: Calculation, 
     if expected is not None and n_total and abs(total - expected) > max(1.0, 0.01 * expected):
         _issue(session, "summe_abweichend", f"Pos. {item.position_number}: Summe Materialauszug {total:,.2f} € ≠ Material Gesamtkosten {expected:,.2f} € ({doc.file_name})",
                "warnung", item=item, document=doc)
+
+
+def _store_trade_items(session: Session, offer: Offer, doc: Document, rows: list[dict]) -> None:
+    from app.models import TradeItem
+    from app.services.normalize import material_category, parse_dimensions
+
+    for r in rows:
+        nums = {k: _to_float(r.get(k)) for k in ("quantity", "purchase_price", "purchase_total", "material_overhead",
+                                                 "sales_overhead", "risk_profit", "sales_total")}
+        if all(v is None for v in nums.values()):
+            continue
+        desc = str(r.get("description") or "").strip()
+        note = str(r["source_note"]).strip()[:500] if r.get("source_note") not in (None, "") else None
+        qty = nums["quantity"]
+        ek_total = nums["purchase_total"] if nums["purchase_total"] is not None else (
+            nums["purchase_price"] * qty if (nums["purchase_price"] is not None and qty) else None)
+        vk = nums["sales_total"]
+        session.add(TradeItem(
+            offer_id=offer.id, document_id=doc.id, source_sheet=r["_sheet"], source_row=r["_row"],
+            line_no=None if r.get("line_no") is None else str(r["line_no"])[:16], description=desc[:500] or None,
+            category=material_category(desc, None), outer_diameter=parse_dimensions(desc).get("outer_diameter"),
+            quantity=qty, purchase_price=nums["purchase_price"], purchase_total=ek_total,
+            material_overhead=nums["material_overhead"], sales_overhead=nums["sales_overhead"], risk_profit=nums["risk_profit"],
+            sales_total=vk, sales_price=(vk / qty) if (vk is not None and qty) else None,
+            markup_factor=(vk / ek_total) if (vk and ek_total) else None, source_note=note,
+            is_estimate=bool(note and re.search(r"(?i)sch(ä|ae)tz|annahme|anfragen", note)),
+        ))
+    session.flush()
 
 
 def _check_calculation(session: Session, item: OfferItem, calc: Calculation, doc: Document) -> None:

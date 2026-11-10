@@ -295,6 +295,18 @@ def make_heta_r05_kalkulation(path: Path, offer_slash: str = "SE-99902/26", posi
         cache[p["sheet"]] = c
     v = wb.create_sheet("Vergleich")
     v["B2"] = "Vergleich (TEST)"
+    o = wb.create_sheet("Optionen")  # Handelsware wie im Original (Hebesätze 8 % / 20 % / 20 %)
+    o["A1"] = f"{offer_slash} – Optionen (Handelsware, TEST)"
+    for col, txt in zip("ABCDEFGHIJ", ["Pos.", "Benennung", "Anzahl", "EK je Stk [€]", "EK gesamt [€]", "MGK", "VGK", "Risiko + Gewinn", "VK [€]", "Quelle / Annahme"]):
+        o[f"{col}3"] = txt
+    for r, (pos, name, qty, ek, note) in enumerate([("1.1", "Ersatzkerzen 100 µm TEST, Ø63 x 1005", 7, 620, "Lieferant TEST Mail 30.10.2026"),
+                                                    ("2.1", "Ersatzbeutel PTFE TEST", 12, 120, "Schätzwert – anfragen")], start=4):
+        e = qty * ek
+        f, g = e * 0.08, (e * 1.08) * 0.2
+        h = (e + f + g) * 0.2
+        for col, val in zip("ABCDEFGHIJ", [pos, name, qty, ek, e, f, g, h, e + f + g + h, note]):
+            o[f"{col}{r}"] = val
+    o["B7"] = "Gelb = Schätzwert, vor Angebotsabgabe beim Lieferanten anfragen."
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
     set_cached_values(path, cache)

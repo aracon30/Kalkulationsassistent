@@ -136,7 +136,7 @@ DENSITY_KG_M3 = {"edelstahl": 7900.0, "stahl": 7850.0}
 
 MATERIAL_CATEGORIES: list[tuple[str, str]] = [
     # (Muster in Form/Benennung, Kategorie) – Reihenfolge = Priorität
-    (r"filterkerze|filterbeutel|filterkorb|siebkorb|erstbest(ü|ue)ckung", "Filterelement"),
+    (r"filterkerze|filterbeutel|filterkorb(?!halter|aufnahme)|siebkorb(?!halter|aufnahme|platte)|erstbest(ü|ue)ckung|ersatzkerze|ersatzbeutel", "Filterelement"),
     (r"dichtung", "Dichtung"),
     (r"schraube|mutter|bolzen|gewindestange|scheibe", "Verbindungselement"),
     (r"blindflansch|flansch", "Flansch"),
@@ -145,6 +145,7 @@ MATERIAL_CATEGORIES: list[tuple[str, str]] = [
     (r"rohr", "Rohr"),
     (r"blech|flachstahl|platte|lasche", "Blech/Flachstahl"),
     (r"rund(stahl|material)|vollmaterial|welle", "Rundmaterial"),
+    (r"ventil|armatur|manometer|schauglas|hahn\b|absperr", "Armatur"),
     (r"e-teil|kaufteil|zukauf|davit|typenschild", "Kauf-/Einbauteil"),
 ]
 

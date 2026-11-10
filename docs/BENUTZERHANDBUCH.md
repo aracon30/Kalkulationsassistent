@@ -120,9 +120,20 @@ Apparat als Vorlage“.
 Die eigentliche Kalkulation erfolgt weiterhin in der Excel-Vorlage; die Anfrage ist Vorbereitung und
 Plausibilitätsrahmen. Originaldaten werden nicht verändert. Sätze: `config/heta_kalkulation.yaml`.
 
+## 7b. Neue Anfrage: Ersatzteile / Handelsware
+
+Für Anfragen ohne Apparat (Filterkerzen, Beutel, Dichtungen, Armaturen): *Neue Anfrage → Ersatzteile /
+Handelsware*. Kunde, RFQ-Nummer und Frist eintragen, dann je Artikel eine Position (gleiche Artikel aus
+mehreren Kundenpositionen zusammenfassen, z. B. „2+3“). Sobald der Einkaufspreis vom Lieferanten vorliegt,
+erscheint der Verkaufspreis je Stück und gesamt (Zuschläge wie im Blatt „Optionen“: 8 % / 20 % / 20 % →
+Faktor 1,5552; änderbar). Unter „Frühere Preise suchen“ finden sich Handelsware aus früheren Angeboten
+(mit EK, VK und Lieferant) und Bauteile aus Materialauszügen; „übernehmen“ setzt den EK in die zuletzt
+bearbeitete Position. Notizen für Lieferantenanfragen, Beständigkeitsnachweise und Abweichungen;
+„Drucken“ erzeugt eine Übersicht ohne Bedienelemente.
+
 ## 7a. Materialpreise
 
-Alle Bauteilzeilen aus den Materialauszügen: Ansicht „Preisspannen“ (gleiches Bauteil = Kategorie +
+Alle Bauteilzeilen aus den Materialauszügen: Ansicht „Handelsware (EK/VK)“ für die Optionen-Blätter, „Preisspannen“ (gleiches Bauteil = Kategorie +
 Form + Abmaße + Werkstoff + Einheit, ohne Abmaße zusätzlich Benennung) oder „Einzelzeilen“, Filter,
 CSV-Export. €/kg ist für Rohre und Bleche aus Abmaßen geschätzt.
 

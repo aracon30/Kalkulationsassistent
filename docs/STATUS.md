@@ -1,6 +1,6 @@
 # Implementierungsstand und offene Punkte (MVP 0.1.0)
 
-Stand: 10.11.2026 · Tests: `python -m pytest` → 93 bestanden (Linux, Python 3.13; LibreOffice-Test
+Stand: 10.11.2026 · Tests: `python -m pytest` → 96 bestanden (Linux, Python 3.13; LibreOffice-Test
 wird ohne LibreOffice übersprungen).
 
 ## 0. Wichtigster offener Punkt: Referenzdateien fehlten
@@ -203,3 +203,19 @@ Preisstatistik „gleiches Bauteil“ = Kategorie + Form + Abmaße + Werkstoff +
 Abmaße zusätzlich die Benennung (sonst würden z. B. Prallblech und Standfuß vermischt).
 Grenzen: Teile mit gleicher Benennung, aber anderer Größe ohne Abmaßangabe (z. B. Davit für DN300
 und DN1000) werden weiterhin zusammengefasst – Median bei solchen Teilen prüfen.
+
+## 10. Handelsware / Ersatzteilanfragen (0.5.0)
+
+**A) Handelsware aus Kalkulationen:** Blätter „Optionen“ (bzw. „Handelsware“, „Ersatzteile“) werden beim
+Import gelesen (Tabelle `trade_items`, Migration 0006): Benennung, Menge, EK je Stück und gesamt, MGK,
+VGK, Risiko + Gewinn, VK, Faktor VK/EK, „Quelle / Annahme“ (Lieferant, Datum). Einträge mit
+„Schätzwert/anfragen“ sind als Schätzwert markiert. Geprüft an SE-13705.26 (3 Optionen, Faktor 1,5552).
+Ansicht: *Materialpreise → Ansicht „Handelsware (EK/VK)“*, CSV-Export.
+
+**B) Anfrage-Art „Ersatzteile / Handelsware“:** Kopf mit Kunde, RFQ-Nummer und Frist; Positionen
+(Bezeichnung/Spezifikation, Menge, Einheit, Lieferant, EK, Lieferzeit); VK = EK × (1 + MGK) × (1 + VGK) ×
+(1 + Risiko/Gewinn) wie im Blatt „Optionen“ (`app/services/trade_calc.py`, reproduziert die Originalwerte);
+Pauschalen für Verpackung, Versand, Zertifikate; Positionen ohne EK bleiben „offen“. Suche nach früheren
+Preisen in Handelsware und Materialauszügen mit „übernehmen“. Speichern, Status, Druckansicht.
+
+Weitere Änderungen: Kategorie „Armatur“; „Siebkorbhalterung“/„Korbaufnahme“ nicht mehr als Filterelement.

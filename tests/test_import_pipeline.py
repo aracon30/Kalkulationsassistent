@@ -388,3 +388,21 @@ def test_heta_r05_material_lines(db, env):
     # Neuimport ersetzt die Zeilen (keine Dubletten)
     run_import(db, force=True)
     assert db.scalar(select(func.count(MaterialLine.id))) == 8
+
+
+def test_heta_r05_trade_items_from_options_sheet(db, env):
+    from app.models import TradeItem
+    from tests.factory import make_heta_r05_kalkulation
+    folder = env / "K7" / "SE-99910.26-X"
+    make_heta_r05_kalkulation(folder / "SE-99910.26_Kalkulation.xlsx", "SE-99910/26")
+    scan_and_inventory(db, str(env / "K7"))
+    run_import(db)
+    items = {t.line_no: t for t in db.scalars(select(TradeItem))}
+    assert set(items) == {"1.1", "2.1"}  # Hinweiszeile ohne Zahlen wird nicht übernommen
+    k = items["1.1"]
+    assert (k.quantity, k.purchase_price, k.purchase_total, k.category, k.outer_diameter) == (7, 620, 4340, "Filterelement", 63)
+    assert k.sales_total == pytest.approx(4340 * 1.08 * 1.2 * 1.2) and k.markup_factor == pytest.approx(1.5552)
+    assert k.sales_price == pytest.approx(k.sales_total / 7) and not k.is_estimate and "Lieferant" in k.source_note
+    assert items["2.1"].is_estimate
+    run_import(db, force=True)
+    assert db.scalar(select(func.count(TradeItem.id))) == 2

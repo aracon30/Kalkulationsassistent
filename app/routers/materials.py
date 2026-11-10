@@ -12,7 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.models import Calculation, Document, MaterialLine, Offer, OfferItem
+from app.models import Calculation, Document, MaterialLine, Offer, OfferItem, TradeItem
 from app.services.excel_reader import parse_number
 from app.services.normalize import price_group_key
 from app.web import templates
@@ -72,12 +72,13 @@ def _group(lines: list[MaterialLine]) -> list[dict]:
 def material_page(request: Request, q: str | None = None, kategorie: str | None = None, werkstoff: str | None = None,
                   d_min: str | None = None, d_max: str | None = None, dn: str | None = None, jahr: str | None = None,
                   ansicht: str = "gruppen", alle_versionen: bool = False, db: Session = Depends(get_db)):
-    lines = list(db.scalars(_query(db, q, kategorie, werkstoff, d_min, d_max, dn, jahr, not alle_versionen).limit(5000)))
-    cats = [c for (c,) in db.execute(select(MaterialLine.category).distinct().order_by(MaterialLine.category)) if c]
+    trade = list(db.scalars(trade_query(q, kategorie, d_min, d_max, jahr).limit(2000))) if ansicht == "handelsware" else []
+    lines = [] if ansicht == "handelsware" else list(db.scalars(_query(db, q, kategorie, werkstoff, d_min, d_max, dn, jahr, not alle_versionen).limit(5000)))
+    cats = sorted({c for (c,) in db.execute(select(MaterialLine.category).distinct()) if c} | {c for (c,) in db.execute(select(TradeItem.category).distinct()) if c})
     years = [y for (y,) in db.execute(select(Offer.year).distinct().order_by(Offer.year.desc())) if y]
     f = {"q": q or "", "kategorie": kategorie or "", "werkstoff": werkstoff or "", "d_min": d_min or "", "d_max": d_max or "",
          "dn": dn or "", "jahr": jahr or "", "ansicht": ansicht, "alle_versionen": alle_versionen}
-    return templates.TemplateResponse(request, "materials.html", {"nav": "material", "lines": lines, "groups": _group(lines) if ansicht == "gruppen" else [],
+    return templates.TemplateResponse(request, "materials.html", {"nav": "material", "lines": lines, "groups": _group(lines) if ansicht == "gruppen" else [], "trade": trade,
                                                                   "cats": cats, "years": years, "f": f, "query": request.url.query})
 
 
@@ -102,3 +103,40 @@ def material_csv(q: str | None = None, kategorie: str | None = None, werkstoff: 
     buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="materialpreise.csv"'})
+
+
+def trade_query(q: str | None, kategorie: str | None = None, d_min: str | None = None, d_max: str | None = None, jahr: str | None = None):
+    """Handelsware suchen: alle Suchwörter müssen in Benennung oder Quelle vorkommen."""
+    stmt = select(TradeItem).join(Offer, TradeItem.offer_id == Offer.id).options(selectinload(TradeItem.offer), selectinload(TradeItem.document))
+    for token in (q or "").split():
+        like = f"%{token}%"
+        stmt = stmt.where(or_(TradeItem.description.ilike(like), TradeItem.source_note.ilike(like)))
+    if kategorie:
+        stmt = stmt.where(TradeItem.category == kategorie)
+    lo, hi = parse_number(d_min), parse_number(d_max)
+    if lo is not None:
+        stmt = stmt.where(TradeItem.outer_diameter >= lo)
+    if hi is not None:
+        stmt = stmt.where(TradeItem.outer_diameter <= hi)
+    if jahr and str(jahr).isdigit():
+        stmt = stmt.where(Offer.year == int(jahr))
+    return stmt.order_by(Offer.offer_date.desc().nullslast(), Offer.offer_number.desc())
+
+
+@router.get("/material/handelsware.csv")
+def trade_csv(q: str | None = None, kategorie: str | None = None, d_min: str | None = None, d_max: str | None = None,
+              jahr: str | None = None, db: Session = Depends(get_db)):
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Angebot", "Angebotsdatum", "Pos.", "Benennung", "Kategorie", "Menge", "EK je Stk", "EK gesamt", "MGK", "VGK",
+                "Risiko + Gewinn", "VK gesamt", "VK je Stk", "Faktor VK/EK", "Quelle / Annahme", "Schätzwert", "Datei", "Blatt", "Zeile"])
+    num = lambda v: "" if v is None else f"{v:.4f}".rstrip("0").rstrip(".").replace(".", ",")  # noqa: E731
+    for t in db.scalars(trade_query(q, kategorie, d_min, d_max, jahr)):
+        w.writerow([t.offer.offer_number, t.offer.offer_date or "", t.line_no or "", t.description, t.category, num(t.quantity),
+                    num(t.purchase_price), num(t.purchase_total), num(t.material_overhead), num(t.sales_overhead), num(t.risk_profit),
+                    num(t.sales_total), num(t.sales_price), num(t.markup_factor), t.source_note or "", "ja" if t.is_estimate else "",
+                    t.document.file_name if t.document else "", t.source_sheet or "", t.source_row or ""])
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": 'attachment; filename="handelsware.csv"'})

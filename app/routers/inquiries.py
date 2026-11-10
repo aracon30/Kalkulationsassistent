@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date as _date
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from pydantic import BaseModel
@@ -11,11 +12,11 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.models import Inquiry, OfferItem
-from app.services import heta_calc
+from app.services import heta_calc, trade_calc
 from app.services.excel_reader import parse_number
 from app.services.inquiry import (load_item, material_price_stats, prefill_inputs, reference_summary, similar_items,
                                   template_lines)
-from app.services.normalize import normalize_material, normalize_product_type
+from app.services.normalize import normalize_material, normalize_product_type, parse_date
 from app.web import redirect, templates
 
 router = APIRouter()
@@ -111,6 +112,11 @@ def inquiry_workspace(inq_id: int, request: Request, ref: int | None = None, db:
     inq = db.get(Inquiry, inq_id)
     if not inq:
         raise HTTPException(404, "Anfrage nicht gefunden")
+    if inq.kind == "handelsware":
+        state = _trade_state(inq)
+        rates_form = {k: (round(v * 100, 3) if (k in TRADE_RATE_KEYS and v is not None) else v) for k, v in state["rates"].items()}
+        return templates.TemplateResponse(request, "trade_inquiry.html", {"nav": "anfragen", "inq": inq, "lines": state["lines"],
+                                                                          "rates": rates_form, "statuses": STATUSES, "today": _date.today()})
     settings = get_settings()
     matches = similar_items(db, inq, settings.similarity_file)
     ref_id = ref or inq.reference_item_id or (matches[0].item_id if matches else None)
@@ -187,3 +193,99 @@ def inquiry_delete(inq_id: int, db: Session = Depends(get_db)):
         db.delete(inq)
         db.commit()
     return redirect("/anfragen", msg="Anfrage gelöscht")
+
+
+# --- Anfrage-Art "Ersatzteile / Handelsware" ------------------------------------------------------
+
+TRADE_RATE_KEYS = ("material_overhead_rate", "sales_overhead_rate", "risk_profit_rate")
+
+
+def _trade_state(inq: Inquiry) -> dict:
+    data = json.loads(inq.trade_json) if inq.trade_json else {}
+    defaults = _defaults()
+    rates = {k: defaults.get(k) for k in TRADE_RATE_KEYS}
+    rates.update({k: None for k in ("packaging_cost", "shipping_cost", "certificate_cost")})
+    rates.update(data.get("rates") or {})
+    lines = data.get("lines") or [{"pos": "1", "description": "", "spec": "", "qty": None, "unit": "Stk", "supplier": "", "ek": None,
+                                   "lead_time": "", "note": ""}]
+    return {"lines": lines, "rates": rates}
+
+
+@router.post("/anfragen/handelsware")
+def trade_create(title: str = Form(""), customer: str = Form(""), reference_no: str = Form(""), due_date: str = Form(""),
+                 db: Session = Depends(get_db)):
+    inq = Inquiry(kind="handelsware", title=title.strip()[:255] or (reference_no.strip() or "Ersatzteilanfrage"),
+                  customer=customer.strip() or None, reference_no=reference_no.strip()[:128] or None, due_date=parse_date(due_date))
+    db.add(inq)
+    db.commit()
+    return redirect(f"/anfragen/{inq.id}")
+
+
+class TradeCalcRequest(BaseModel):
+    lines: list[dict]
+    rates: dict[str, float | str | None] = {}
+
+
+@router.post("/api/handelsware/berechnen")
+def trade_calculate(data: TradeCalcRequest):
+    return trade_calc.calculate(data.lines, data.rates, _defaults())
+
+
+@router.get("/api/handelsware/suche")
+def trade_search(q: str = "", d_min: str = "", d_max: str = "", db: Session = Depends(get_db)):
+    """Frühere Preise: Handelsware (EK/VK) und Bauteilzeilen aus Materialauszügen."""
+    from sqlalchemy import or_
+
+    from app.models import Calculation, MaterialLine, Offer
+    from app.routers.materials import trade_query
+
+    tokens = q.split()
+    if not tokens and not d_min and not d_max:
+        return {"trade": [], "material": []}
+    trade = [{"offer_id": t.offer.id, "offer": t.offer.offer_number, "date": t.offer.offer_date.isoformat() if t.offer.offer_date else None,
+              "description": t.description, "qty": t.quantity, "ek": t.purchase_price, "vk": t.sales_price, "factor": t.markup_factor,
+              "note": t.source_note, "estimate": t.is_estimate}
+             for t in db.scalars(trade_query(q, None, d_min, d_max, None).limit(30))]
+    stmt = (select(MaterialLine).join(Calculation, MaterialLine.calculation_id == Calculation.id)
+            .where(Calculation.is_current.is_(True)))
+    for token in tokens:
+        like = f"%{token}%"
+        stmt = stmt.where(or_(MaterialLine.description.ilike(like), MaterialLine.form.ilike(like), MaterialLine.dimensions.ilike(like)))
+    lo, hi = parse_number(d_min), parse_number(d_max)
+    if lo is not None:
+        stmt = stmt.where(MaterialLine.outer_diameter >= lo)
+    if hi is not None:
+        stmt = stmt.where(MaterialLine.outer_diameter <= hi)
+    material = []
+    for l in db.scalars(stmt.limit(30)):
+        o = l.offer_item.offer
+        material.append({"offer_id": o.id, "offer": o.offer_number, "date": o.offer_date.isoformat() if o.offer_date else None,
+                         "description": l.description, "dimensions": l.dimensions, "material": l.material or l.material_raw,
+                         "qty": l.quantity, "price": l.unit_price, "unit": l.price_unit})
+    return {"trade": trade, "material": material}
+
+
+@router.post("/anfragen/{inq_id}/handelsware/speichern")
+def trade_save(inq_id: int, trade_json: str = Form("{}"), notes: str = Form(""), status: str = Form("in Arbeit"),
+               title: str = Form(""), customer: str = Form(""), reference_no: str = Form(""), due_date: str = Form(""),
+               db: Session = Depends(get_db)):
+    inq = db.get(Inquiry, inq_id)
+    if not inq or inq.kind != "handelsware":
+        raise HTTPException(404, "Anfrage nicht gefunden")
+    try:
+        data = json.loads(trade_json or "{}")
+        if not isinstance(data, dict) or not isinstance(data.get("lines", []), list):
+            raise ValueError
+    except ValueError:
+        raise HTTPException(400, "Ungültige Eingaben") from None
+    result = trade_calc.calculate(data.get("lines", []), data.get("rates", {}), _defaults())
+    inq.trade_json = json.dumps(data, ensure_ascii=False)
+    inq.result_price = result["total"] if result["sum_vk"] else None
+    inq.title = title.strip()[:255] or inq.title
+    inq.customer = customer.strip() or None
+    inq.reference_no = reference_no.strip()[:128] or None
+    inq.due_date = parse_date(due_date)
+    inq.notes = notes.strip() or None
+    inq.status = status if status in STATUSES else inq.status
+    db.commit()
+    return redirect(f"/anfragen/{inq.id}", msg="Anfrage gespeichert")

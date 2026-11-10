@@ -54,6 +54,11 @@ class MaterialTable(BaseModel):
     max_rows: int = 200
 
 
+class TradeTable(MaterialTable):
+    """Handelsware/Optionen: eigenes Blatt (z. B. "Optionen") mit EK, Zuschlägen und VK je Zeile."""
+    sheet_regex: str = r"(?i)optionen|handelsware|ersatzteile"
+
+
 class OperationsTable(BaseModel):
     """Arbeitsgänge als frei benannte Tabellenzeilen (jede Zeile wird ein Arbeitsgang)."""
     header_label: str                    # Spaltenkopf der Arbeitsgang-Bezeichnungen, z. B. "Arbeitsgang"
@@ -94,6 +99,7 @@ class ImportProfile(BaseModel):
     operations: dict[str, FieldSpec] = Field(default_factory=dict)
     operations_table: OperationsTable | None = None
     material_table: MaterialTable | None = None
+    trade_table: TradeTable | None = None
     calculation_fallbacks: dict[str, str] = Field(default_factory=dict)  # Zielfeld -> Ersatzfeld
     header_constants: dict[str, str] = Field(default_factory=dict)       # feste Kopfwerte der Vorlage, z. B. currency: EUR
     source_file: str | None = None
@@ -244,6 +250,7 @@ class WorkbookExtraction:
     fallbacks: dict[str, str] = field(default_factory=dict)
     constants: dict[str, str] = field(default_factory=dict)
     material_lines: dict[int, list[dict]] = field(default_factory=dict)
+    trade_lines: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -678,6 +685,10 @@ class Extractor:
                     pos_num = pn.value
             collect(pos_num, self.sheets, None)
 
+        if prof.trade_table is not None:
+            for sheet in self.wb.sheetnames:
+                if re.search(prof.trade_table.sheet_regex, sheet):
+                    result.trade_lines.extend(self._material_table(prof.trade_table, sheet))
         if not result.positions:
             result.issues.append(Issue("keine_positionen", "Keine Angebotsposition mit auswertbaren Werten gefunden", "fehler"))
         if self.wb.full_calc_on_load:

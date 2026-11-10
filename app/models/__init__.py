@@ -369,7 +369,11 @@ class Inquiry(Base):
     __tablename__ = "inquiries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), default="apparat")   # apparat | handelsware
     title: Mapped[str] = mapped_column(String(255))
+    reference_no: Mapped[str | None] = mapped_column(String(128))      # Anfragenummer des Kunden (RFQ)
+    due_date: Mapped[date | None] = mapped_column(Date)                # Angebotsfrist
+    trade_json: Mapped[str | None] = mapped_column(Text)               # Positionen + Sätze (Handelsware)
     customer: Mapped[str | None] = mapped_column(String(255))
     product_type: Mapped[str | None] = mapped_column(String(64))
     dn: Mapped[float | None] = mapped_column(Float)
@@ -446,4 +450,33 @@ class MaterialLine(Base):
 
     calculation: Mapped[Calculation] = relationship()
     offer_item: Mapped[OfferItem] = relationship()
+    document: Mapped[Document | None] = relationship()
+
+
+class TradeItem(Base):
+    """Handelsware/Optionen aus Kalkulationen (z. B. Blatt "Optionen"): Einkaufspreis, Zuschläge, Verkaufspreis."""
+    __tablename__ = "trade_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    offer_id: Mapped[int] = mapped_column(ForeignKey("offers.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    source_sheet: Mapped[str | None] = mapped_column(String(128))
+    source_row: Mapped[int | None] = mapped_column(Integer)
+    line_no: Mapped[str | None] = mapped_column(String(16))
+    description: Mapped[str | None] = mapped_column(String(500), index=True)
+    category: Mapped[str | None] = mapped_column(String(64), index=True)
+    outer_diameter: Mapped[float | None] = mapped_column(Float)
+    quantity: Mapped[float | None] = mapped_column(Float)
+    purchase_price: Mapped[float | None] = mapped_column(Float)      # EK je Stück
+    purchase_total: Mapped[float | None] = mapped_column(Float)      # EK gesamt
+    material_overhead: Mapped[float | None] = mapped_column(Float)   # MGK-Betrag
+    sales_overhead: Mapped[float | None] = mapped_column(Float)      # VGK-Betrag
+    risk_profit: Mapped[float | None] = mapped_column(Float)         # Risiko + Gewinn
+    sales_total: Mapped[float | None] = mapped_column(Float)         # VK gesamt
+    sales_price: Mapped[float | None] = mapped_column(Float)         # VK je Stück (berechnet)
+    markup_factor: Mapped[float | None] = mapped_column(Float)       # VK / EK
+    source_note: Mapped[str | None] = mapped_column(String(500))     # "Quelle / Annahme", z. B. Lieferant + Datum
+    is_estimate: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    offer: Mapped[Offer] = relationship()
     document: Mapped[Document | None] = relationship()

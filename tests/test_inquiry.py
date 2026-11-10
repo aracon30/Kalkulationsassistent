@@ -102,3 +102,45 @@ def test_template_lines_reproduce_original_material_cost(client_with_data):
         lines = template_lines(db, item, stats)
         total = sum((l["length"] or 1) * l["qty"] * l["price_then"] + l["apz"] + l["mfg"] for l in lines)
         assert total == pytest.approx(item.current_calculation.material_cost)
+
+
+def test_trade_calc_matches_options_sheet(defaults):
+    from app.services import trade_calc
+    r = trade_calc.calculate([{"qty": 7, "ek": 620}, {"qty": 12, "ek": 120}, {"qty": 1, "ek": 1200}, {"qty": 5}],
+                             {"packaging_cost": 50}, defaults)
+    # Originalwerte Blatt "Optionen" SE-13705.26: 6.749,568 / 2.239,488 / 1.866,24
+    assert [round(l["vk_total"], 3) for l in r["lines"][:3]] == [6749.568, 2239.488, 1866.24]
+    assert r["factor"] == pytest.approx(1.5552) and r["open"] == ["4"]
+    assert r["total"] == pytest.approx(6749.568 + 2239.488 + 1866.24 + 50)
+
+
+def test_trade_inquiry_flow(client_with_data):
+    client, db = client_with_data
+    from app.models import Inquiry
+    r = client.post("/anfragen/handelsware", data={"title": "Ersatzkerzen", "customer": "Raffinerie", "reference_no": "BAKN26115231",
+                                                   "due_date": "2026-11-17"}, follow_redirects=False)
+    url = r.headers["location"]
+    page = client.get(url).text
+    assert "Ersatzteile / Handelsware" in page and "BAKN26115231" in page and "Frist 17.11.2026" in page
+    # Suche findet Handelsware aus dem Blatt "Optionen" der importierten Kalkulation
+    res = client.get("/api/handelsware/suche?q=ersatzkerzen").json()
+    assert res["trade"] and res["trade"][0]["ek"] == 620
+    res = client.get("/api/handelsware/suche?q=&d_min=60&d_max=70").json()
+    assert any("Filterkerzen" in m["description"] or "Ersatzkerzen" in (m.get("description") or "") for m in res["material"] + res["trade"])
+    calc = client.post("/api/handelsware/berechnen", json={"lines": [{"qty": "25", "ek": "18,50"}, {"qty": 96, "ek": None}], "rates": {}}).json()
+    assert calc["lines"][0]["vk_unit"] == pytest.approx(18.5 * 1.5552) and calc["open"] == ["2"]
+    data = {"lines": [{"pos": "1", "description": "Wickelkerze 2 µm Nylon/316, 61x27,5x762", "qty": 25, "unit": "Stk", "supplier": "Lieferant A", "ek": 18.5, "lead_time": "4 Wo"},
+                      {"pos": "2+3", "description": "Wickelkerze 10 µm", "qty": 96, "unit": "Stk", "supplier": "", "ek": None, "lead_time": ""}],
+            "rates": {"material_overhead_rate": 0.08, "sales_overhead_rate": 0.2, "risk_profit_rate": 0.2, "shipping_cost": 150}}
+    inq_id = int(url.rsplit("/", 1)[1])
+    r = client.post(f"/anfragen/{inq_id}/handelsware/speichern", data={"trade_json": json.dumps(data), "notes": "Beständigkeit 143 °C bestätigen lassen",
+                                                                       "status": "in Arbeit", "title": "Ersatzkerzen", "customer": "Raffinerie",
+                                                                       "reference_no": "BAKN26115231", "due_date": "17.11.2026"}, follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    inq = db.get(Inquiry, inq_id)
+    assert inq.kind == "handelsware" and inq.result_price == pytest.approx(25 * 18.5 * 1.5552 + 150)
+    page = client.get(url).text
+    assert "Wickelkerze 2" in page and "Beständigkeit" in page
+    lst = client.get("/anfragen").text
+    assert "Handelsware" in lst and "BAKN26115231" in lst

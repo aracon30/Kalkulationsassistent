@@ -98,6 +98,22 @@ material_table:
   stop_labels: [Material Gesamtkosten]
   skip_regex: '^\s*Pos\.\s*\d+\s*[–—-]'   # Positionstitel
 
+# Handelsware / Optionen (Blatt "Optionen"): EK, Hebesätze, VK, Quelle
+trade_table:
+  sheet_regex: '(?i)optionen|handelsware|ersatzteile'
+  header_label: Benennung
+  columns:
+    line_no: [Pos.]
+    description: [Benennung]
+    quantity: [Anzahl, Menge]
+    purchase_price: [EK je Stk, EK/Stk, EK]
+    purchase_total: [EK gesamt]
+    material_overhead: [MGK]
+    sales_overhead: [VGK]
+    risk_profit: [Risiko + Gewinn]
+    sales_total: [VK]
+    source_note: [Quelle / Annahme, Quelle, Bemerkung]
+
 # Feste Angaben der Vorlage: alle Beträge sind in der Vorlage als € formatiert
 header_constants:
   currency: EUR

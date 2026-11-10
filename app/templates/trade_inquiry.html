@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ inq.title }} – HETA{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ inq.title }} <span class="hint">Ersatzteile / Handelsware{% if inq.reference_no %} · {{ inq.reference_no }}{% endif %}</span></h1>
+  <div>{% if inq.due_date %}<span class="badge {{ 'err' if inq.due_date < today else 'warn' }}">Frist {{ inq.due_date|de_date }}</span>{% endif %}
+    <span class="badge info">{{ inq.status }}</span></div>
+</div>
+
+<form method="post" action="/anfragen/{{ inq.id }}/handelsware/speichern" id="trade-form">
+<input type="hidden" name="trade_json" id="trade_json">
+<section class="card no-print">
+  <div class="grid-form">
+    <label>Bezeichnung<input name="title" value="{{ inq.title }}"></label>
+    <label>Kunde<input name="customer" value="{{ inq.customer or '' }}"></label>
+    <label>Anfragenummer (RFQ)<input name="reference_no" value="{{ inq.reference_no or '' }}"></label>
+    <label>Angebotsfrist<input name="due_date" type="date" value="{{ inq.due_date.isoformat() if inq.due_date else '' }}"></label>
+  </div>
+</section>
+
+<section class="card">
+  <h2>1. Positionen</h2>
+  <p class="hint no-print">Gleiche Artikel aus mehreren Kundenpositionen beim Lieferanten zusammen anfragen (Staffelpreis). EK = Einkaufspreis je Stück.
+    Positionen ohne EK bleiben „offen“ und fehlen in der Summe.</p>
+  <div class="table-wrap"><table class="table compact" id="trade-table">
+    <thead><tr><th>Pos.</th><th>Bezeichnung / Spezifikation</th><th class="num">Menge</th><th>Einh.</th><th>Lieferant</th><th class="num">EK/Stk [€]</th>
+      <th>Lieferzeit</th><th class="num">VK/Stk [€]</th><th class="num">VK gesamt [€]</th><th class="no-print"></th></tr></thead>
+    <tbody></tbody>
+    <tfoot>
+      <tr><td colspan="10" class="no-print"><button class="btn small" type="button" id="add-line">+ Position</button></td></tr>
+    </tfoot>
+  </table></div>
+</section>
+
+<div class="grid-2">
+<section class="card">
+  <h2>2. Zuschläge und Pauschalen</h2>
+  <div class="grid-form two" id="rates">
+    <label>Materialgemeinkosten [%]<input name="material_overhead_rate" data-rate="1" value="{{ rates.material_overhead_rate|de_auto('') }}"></label>
+    <label>Vertriebsgemeinkosten [%]<input name="sales_overhead_rate" data-rate="1" value="{{ rates.sales_overhead_rate|de_auto('') }}"></label>
+    <label>Risiko + Gewinn [%]<input name="risk_profit_rate" data-rate="1" value="{{ rates.risk_profit_rate|de_auto('') }}"></label>
+    <label>Verpackung [€]<input name="packaging_cost" value="{{ rates.packaging_cost|de_auto('') }}"></label>
+    <label>Versand [€]<input name="shipping_cost" value="{{ rates.shipping_cost|de_auto('') }}"></label>
+    <label>Zertifikate / Dokumente [€]<input name="certificate_cost" value="{{ rates.certificate_cost|de_auto('') }}"></label>
+  </div>
+  <p class="hint">Wie im Blatt „Optionen“: VK = EK × (1 + MGK) × (1 + VGK) × (1 + Risiko/Gewinn). Pauschalen ohne Zuschlag.</p>
+</section>
+<section class="card">
+  <h2>Ergebnis</h2>
+  <table class="kv">
+    <tr><th>Faktor VK / EK</th><td class="num" id="t-factor">–</td></tr>
+    <tr><th>Summe EK</th><td class="num" id="t-ek">–</td></tr>
+    <tr><th>Summe VK Positionen</th><td class="num" id="t-vk">–</td></tr>
+    <tr><th>Pauschalen</th><td class="num" id="t-extras">–</td></tr>
+    <tr class="sum-row"><th>Angebotswert gesamt</th><td class="num" id="t-total">–</td></tr>
+    <tr><th>Rohertrag (vom VK)</th><td class="num" id="t-margin">–</td></tr>
+  </table>
+  <p id="t-open" class="hint"></p>
+</section>
+</div>
+
+<section class="card no-print">
+  <h2>3. Frühere Preise suchen</h2>
+  <div class="inline-form">
+    <input id="s-q" placeholder="Suchwörter, z. B. kerze 30 nylon" size="30">
+    <input id="s-dmin" placeholder="Ø von [mm]" size="8"><input id="s-dmax" placeholder="Ø bis [mm]" size="8">
+    <button class="btn" type="button" id="s-go">Suchen</button>
+    <span class="hint">„übernehmen“ setzt den EK in die zuletzt bearbeitete Position.</span>
+  </div>
+  <div id="s-results"></div>
+</section>
+
+<section class="card">
+  <h2>4. Notizen und Speichern</h2>
+  <label class="form-row">Notizen (Lieferantenanfragen, Beständigkeit, Zertifikate, Abweichungen)<textarea name="notes" rows="5">{{ inq.notes or '' }}</textarea></label>
+  <div class="inline-form no-print">
+    <select name="status">{% for s in statuses %}<option {{ 'selected' if inq.status == s }}>{{ s }}</option>{% endfor %}</select>
+    <button class="btn primary" type="submit">Speichern</button>
+    <button class="btn" type="button" onclick="window.print()">Drucken</button>
+  </div>
+</section>
+</form>
+<form method="post" action="/anfragen/{{ inq.id }}/loeschen" class="no-print" onsubmit="return confirm('Anfrage wirklich löschen?')"><button class="btn danger small" type="submit">Anfrage löschen</button></form>
+<script id="trade-lines" type="application/json">{{ lines|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script>HETA.initTrade();</script>{% endblock %}

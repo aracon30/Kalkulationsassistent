@@ -3,7 +3,17 @@
 {% block content %}
 <h1>Neue Anfrage</h1>
 <section class="card">
-  <h2>Eckdaten der Anfrage</h2>
+  <h2>Ersatzteile / Handelsware <span class="hint">z. B. Filterkerzen, Beutel, Dichtungen, Armaturen – Einkauf + Zuschläge</span></h2>
+  <form method="post" action="/anfragen/handelsware" class="grid-form">
+    <label>Bezeichnung<input name="title" placeholder="z. B. Ersatzkerzen Kunde X"></label>
+    <label>Kunde<input name="customer"></label>
+    <label>Anfragenummer (RFQ)<input name="reference_no" placeholder="z. B. BAKN26115231"></label>
+    <label>Angebotsfrist<input name="due_date" type="date"></label>
+    <div class="form-actions"><button class="btn primary" type="submit">Ersatzteilanfrage anlegen</button></div>
+  </form>
+</section>
+<section class="card">
+  <h2>Apparat <span class="hint">Behälter/Filter – ähnliche Apparate, Materialauszug, Vorkalkulation</span></h2>
   <form method="post" action="/anfragen" class="grid-form">
     <label>Bezeichnung<input name="title" value="{{ pre.title or '' }}" placeholder="z. B. Kunde X – Kerzenfilter DN400"></label>
     <label>Kunde<input name="customer" value=""></label>
@@ -24,13 +34,17 @@
 <section class="card">
   <h2>Gespeicherte Anfragen</h2>
   <table class="table compact">
-    <tr><th>Bezeichnung</th><th>Kunde</th><th>Eckdaten</th><th>Vorlage</th><th class="num">Vorkalkulation [€]</th><th>Status</th><th>Geändert</th></tr>
+    <tr><th>Bezeichnung</th><th>Art</th><th>Kunde</th><th>Eckdaten / Anfrage-Nr.</th><th>Vorlage / Frist</th><th class="num">Angebotswert [€]</th><th>Status</th><th>Geändert</th></tr>
     {% for r in rows %}
-    <tr><td><a href="/anfragen/{{ r.id }}">{{ r.title }}</a></td><td>{{ r.customer or '–' }}</td>
+    <tr><td><a href="/anfragen/{{ r.id }}">{{ r.title }}</a></td><td class="small">{{ 'Handelsware' if r.kind == 'handelsware' else 'Apparat' }}</td><td>{{ r.customer or '–' }}</td>
+      {% if r.kind == 'handelsware' %}
+      <td class="small">{{ r.reference_no or '–' }}</td><td class="small">{{ r.due_date|de_date }}</td>
+      {% else %}
       <td class="small">{{ r.product_type or '?' }}{% if r.dn %} · DN {{ r.dn|de_auto }}{% endif %}{% if r.material %} · {{ r.material }}{% endif %}{% if r.filter_elements %} · {{ r.filter_elements }} El.{% endif %}</td>
       <td class="small">{% if r.reference_item %}{{ r.reference_item.offer.offer_number }} Pos. {{ r.reference_item.position_number }}{% else %}–{% endif %}</td>
+      {% endif %}
       <td class="num">{{ r.result_price|de_num(2) }}</td><td>{{ r.status }}</td><td class="nowrap">{{ r.updated_at|de_date }}</td></tr>
-    {% else %}<tr><td colspan="7" class="muted">Noch keine Anfragen.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="8" class="muted">Noch keine Anfragen.</td></tr>{% endfor %}
   </table>
 </section>
 {% endblock %}

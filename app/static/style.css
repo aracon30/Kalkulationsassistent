@@ -156,7 +156,16 @@ pre.log { background: #f7f8fa; border: 1px solid var(--border); padding: 10px; m
 .num-in { width: 6.5em; text-align: right; padding: 3px 5px; }
 #calc-table td.num { white-space: nowrap; }
 @media print {
+  .no-print, .alert,
   .topbar, .sidebar, .btn, form[action$="loeschen"], details:not([open]) > form { display: none !important; }
   .content { padding: 0; }
   .card { break-inside: avoid; border: 0; }
 }
+
+#trade-table { table-layout: auto; }
+#trade-table td.t-desc { width: 34%; }
+#trade-table textarea { width: 100%; min-width: 200px; font: inherit; }
+#trade-table input:not(.num-in) { width: 100%; min-width: 3em; }
+#trade-table .num-in { width: 5.5em; }
+#trade-table td.num { white-space: nowrap; }
+@media print { #trade-table input, #trade-table textarea { border: 0; padding: 0; resize: none; } }
