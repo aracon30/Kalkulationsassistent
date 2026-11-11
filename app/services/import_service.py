@@ -991,8 +991,17 @@ def _copy_reason(session: Session, doc: Document, offer_number: str, named: list
 _DOC_ORDER = {DocType.KALKULATION: 0, DocType.FERTIGUNGSZEIT: 1, DocType.ZEICHNUNG: 2}
 
 
+NEWER_HINT_RE = re.compile(r"(?i)(?:^|[\W_])(neu|new|korrigiert|korr|final|aktuell|überarbeitet)(?=$|[\W_])")
+
+
+def _newer_hint(name: str) -> int:
+    """Dateiname kennzeichnet ohne Revisionsnummer eine neuere Fassung ('Neu …', '…_korrigiert')."""
+    return 1 if NEWER_HINT_RE.search(name.rsplit(".", 1)[0]) else 0
+
+
 def _doc_order(d: Document):
-    return (_DOC_ORDER.get(d.document_type, 9), detect_revision(d.file_name)[1] or 0, d.modified_at or datetime.min, d.file_path)
+    return (_DOC_ORDER.get(d.document_type, 9), detect_revision(d.file_name)[1] or 0, _newer_hint(d.file_name),
+            d.modified_at or datetime.min, d.file_path)
 
 
 def _read(prefetch: Prefetcher | None, doc: Document, fallback):
@@ -1083,7 +1092,8 @@ def _update_current_calculations(session: Session, offer: Offer) -> None:
 
         def key(c: Calculation):
             d = c.document
-            return (1 if (d is None or d.is_current) else 0, c.revision_index or 0, d.modified_at if d and d.modified_at else datetime.min, c.id)
+            return (1 if (d is None or d.is_current) else 0, c.revision_index or 0, _newer_hint(d.file_name if d else ""),
+                    d.modified_at if d and d.modified_at else datetime.min, c.id)
 
         calcs.sort(key=key)
         for c in calcs:
@@ -1092,7 +1102,9 @@ def _update_current_calculations(session: Session, offer: Offer) -> None:
         distinct_paths = {c.document.file_path for c in calcs if c.document and c.document.is_current}
         if len(distinct_paths) > 1:
             top = calcs[-1].revision_index
-            clear = top is not None and all((c.revision_index or 0) < top for c in calcs[:-1] if c.document and c.document.file_path != calcs[-1].document.file_path)
+            others = [c for c in calcs[:-1] if c.document and c.document.file_path != calcs[-1].document.file_path]
+            clear = (top is not None and all((c.revision_index or 0) < top for c in others)) or (
+                _newer_hint(calcs[-1].document.file_name) and all((c.revision_index or 0) == (top or 0) and not _newer_hint(c.document.file_name) for c in others))
             _issue(session, "mehrere_versionen", f"Pos. {item.position_number}: mehrere mögliche Kalkulationsversionen ({len(distinct_paths)} Dateien) – aktuell gewählt: {calcs[-1].document.file_name if calcs[-1].document else '?'}"
                    + (" (höchste Revision)" if clear else " – Auswahl nach Dateidatum, bitte prüfen"),
                    "info" if clear else "warnung", item=item)

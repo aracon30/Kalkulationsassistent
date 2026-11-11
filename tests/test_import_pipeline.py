@@ -1,3 +1,4 @@
+import os
 import shutil
 
 import pytest
@@ -573,3 +574,16 @@ def test_asme_and_nickel_materials_are_recognised():
              "Monel 400": "2.4360", "C-276": "2.4819", "304 / 316": "1.4301 / 1.4401", "P355NH": "1.0565"}
     for raw, expected in cases.items():
         assert normalize_material(raw) == (expected, True), raw
+
+
+def test_newer_hint_in_filename_wins_without_revision(db, env):
+    from tests.factory import R05_POSITIONS, make_heta_r05_kalkulation
+    folder = env / "K7" / "SE-99940.26"
+    make_heta_r05_kalkulation(folder / "Neu SE-99940.26_Kalkulation.xlsx", "SE-99940/26", positions=[dict(R05_POSITIONS[0], weight=400)])
+    old = make_heta_r05_kalkulation(folder / "SE-99940.26_Kalkulation.xlsx", "SE-99940/26", positions=[R05_POSITIONS[0]])
+    os.utime(old, (2_000_000_000, 2_000_000_000))   # ältere Fassung hat das jüngere Dateidatum
+    scan_and_inventory(db, str(env / "K7"))
+    run_import(db)
+    item = db.scalars(select(OfferItem)).one()
+    assert item.current_calculation.document.file_name == "Neu SE-99940.26_Kalkulation.xlsx" and item.weight == 400
+    assert db.scalars(select(ReviewIssue).where(ReviewIssue.code == "mehrere_versionen")).one().severity == "info"
